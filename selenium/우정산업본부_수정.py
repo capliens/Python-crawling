@@ -1,10 +1,10 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
-# from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.edge.options import Options  # EdgeOptions 임포트
+from selenium.webdriver.chrome.options import Options
+# from selenium.webdriver.edge.options import Options  # EdgeOptions 임포트
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+# from selenium.webdriver.support import expected_conditions as EC
 
 import sqlite3
 from datetime import datetime
@@ -39,52 +39,37 @@ class EpostScraper:
         for row in rows:
             cells = row.find_elements(By.CLASS_NAME, "txt_c")
             row_data = []
-            # ==문제제
+            # ==문제
             for cell in cells:
-                text = cell.text.strip()
+                text = cell.text.strip().replace("\n", "")
                 link = None
                 link_text = None
                 link_element = None
-                new_url = None
+                data_href_value = None
                 try:
                     link_element = cell.find_element(By.TAG_NAME, "a")
                     link = link_element.get_attribute("href")
-                    if not self.tf:
-                        original_window = driver.current_window_handle
-                        driver.execute_script(
-                            "arguments[0].click();", link_element)
-                        wait = WebDriverWait(driver, 10)
-                        wait.until(EC.new_window_is_opened(
-                            driver.window_handles))
-                        # 현재 열려있는 모든 창의 핸들을 가져옵니다.
-                        all_windows = driver.window_handles
-
-                        # 원래 창이 아닌 다른 핸들을 찾습니다.
-                        for window_handle in all_windows:
-                            if window_handle != original_window:
-                                new_window_handle = window_handle
-                                break
-
-                        # 새 창으로 전환합니다.
-                        driver.switch_to.window(new_window_handle)
-                        # 현재 URL을 가져옵니다.
-                        new_url = driver.current_url
-                        print(new_url)
+                    if link is None:
+                        data_href_value = link_element.get_attribute(
+                            "data-href")
                 except NoSuchElementException:
                     pass
 
                 if link_element is not None:  # link_element가 존재하는 경우에만 text 추출
                     link_text = link_element.text.strip()
-
-                if link:
-                    if self.tf:
+                if link or data_href_value:
+                    if self.tf is True:
                         if text == "약관보기":
                             row_data.append(("약관", link))
                         else:
                             row_data.append((text, link))
                     else:
-                        row_data.append(
-                            (link_text if link_text else "약관", link))
+                        base_url = "https://epostlife.go.kr"
+                        full_url = base_url + data_href_value
+                        if link_text == '':
+                            row_data.append(("약관", full_url))
+                        else:
+                            row_data.append((text, full_url))
                 else:
                     row_data.append(text)
 
@@ -94,8 +79,8 @@ class EpostScraper:
 
 # ───── 2. 셀레니움 드라이버 설정 ─────
 options = Options()
-# driver = webdriver.Chrome(options=options)
-driver = webdriver.Edge(options=options)
+driver = webdriver.Chrome(options=options)
+# driver = webdriver.Edge(options=options)
 # driver.get("https://epostlife.go.kr/ASISDM00AT.do")
 driver.get("https://epostlife.go.kr/ASISDM00BT.do")
 wait = WebDriverWait(driver, 10)
@@ -103,6 +88,8 @@ wait = WebDriverWait(driver, 10)
 all_data = []
 scraper2 = EpostScraper(driver, tf=False)
 all_data.extend(scraper2.get_all_data())
+
+# --------임시----------
 
 # btn1 = wait.until(EC.presence_of_element_located((By.ID, "_tapBtnArea01")))
 # btn2 = wait.until(EC.presence_of_element_located((By.ID, "_tapBtnArea02")))
@@ -166,9 +153,6 @@ for row in all_data:
                 date,              # sales_period
                 link
             ])
-
-for row in structured_rows:
-    print(row)
 
 # ───── 5. DB 저장 ─────
 with sqlite3.connect("web_data.db") as conn:
