@@ -13,7 +13,6 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # import sqlite3
 # from datetime import datetime
-import time
 
 # -----가져오기----
 
@@ -24,8 +23,7 @@ class EpostScraper:
 
     def get_all_data(self):
         data_list = []
-        while True:
-            data_list = self._extract(data_list)
+        data_list = self._extract(data_list)
         return data_list
 
     def _extract(self, data_list):
@@ -67,29 +65,40 @@ a_tags = container.find_elements(
 
 for a in a_tags:
     try:
+        # 1단계 클릭
         wait.until(EC.element_to_be_clickable(a)).click()
-        time.sleep(1)
 
-        container2 = wait.until(
-            EC.presence_of_element_located((By.ID, "mCSB_2_container")))
+        # 2단계 메뉴가 렌더링될 때까지 대기 (step2_list가 등장)
+        wait.until(EC.presence_of_element_located((By.ID, "step2_list")))
 
+        container2 = driver.find_element(By.ID, "mCSB_2_container")
         a_tag2s = container2.find_elements(
-            By.CSS_SELECTOR, "ul.step2_list > li > a")
+            By.CSS_SELECTOR, "ul#step2_list > li > a")
 
         for b in a_tag2s:
-            wait.until(EC.element_to_be_clickable(b)).click()
-            time.sleep(1)
-            container3 = wait.until(
-                EC.presence_of_element_located((By.ID, "mCSB_3_container")))
+            try:
+                wait.until(EC.element_to_be_clickable(b)).click()
 
-            a_tag3s = container3.find_elements(
-                By.CSS_SELECTOR, "ul.step3_list > li > a")
+                # 3단계 메뉴가 렌더링될 때까지 대기
+                wait.until(EC.presence_of_element_located(
+                    (By.ID, "step3_list")))
 
-            for c in a_tag3s:
-                wait.until(EC.element_to_be_clickable(c)).click()
-                time.sleep(1)
-                scraper2 = EpostScraper(driver)
-                all_data.extend(scraper2.get_all_data())
+                container3 = driver.find_element(By.ID, "mCSB_3_container")
+                a_tag3s = container3.find_elements(
+                    By.CSS_SELECTOR, "ul#step3_list > li > a")
+                scroll_value = 0
+                for c in a_tag3s:
+                    try:
+                        wait.until(EC.element_to_be_clickable(c)).click()
+                        # 데이터 추출
+                        # scraper2 = EpostScraper(driver)
+                        # all_data.extend(scraper2.get_all_data())
+                        # print("끝내18")
+                    except Exception as e:
+                        print(f"3단계 클릭 오류: {e}")
+                driver.execute_script("window.scrollTo(0, -100);")
+            except Exception as e:
+                print(f"2단계 클릭 오류: {e}")
 
     except Exception as e:
-        print(f"Error clicking: {e}")
+        print(f"1단계 클릭 오류: {e}")
