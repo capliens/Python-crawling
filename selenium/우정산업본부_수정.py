@@ -36,16 +36,35 @@ class EpostScraper:
         return data_list
 
     def _extract_rows(self, rows, data_list):
-        for row in rows:
+        rowspan_cache = {}
+
+        for row_index, row in enumerate(rows):
             cells = row.find_elements(By.CLASS_NAME, "txt_c")
             row_data = []
-            # ==문제
-            for cell in cells:
+            col_idx = 0
+            cell_idx = 0
+
+            while cell_idx < len(cells) or (len(rowspan_cache) > 0 and (
+                    col_idx, row_index) in rowspan_cache):
+                # 먼저 캐시된 rowspan 값 삽입
+                if (col_idx, row_index) in rowspan_cache:
+                    row_data.append(rowspan_cache[(col_idx, row_index)])
+                    del rowspan_cache[(col_idx, row_index)]
+                    col_idx += 1
+                    continue
+
+                if cell_idx >= len(cells):
+                    break  # 셀은 다 썼는데 캐시도 끝났으면 종료
+
+                cell = cells[cell_idx]
+                cell_idx += 1
+
                 text = cell.text.strip().replace("\n", "")
                 link = None
                 link_text = None
                 link_element = None
                 data_href_value = None
+
                 try:
                     link_element = cell.find_element(By.TAG_NAME, "a")
                     link = link_element.get_attribute("href")
@@ -55,23 +74,35 @@ class EpostScraper:
                 except NoSuchElementException:
                     pass
 
-                if link_element is not None:  # link_element가 존재하는 경우에만 text 추출
+                if link_element is not None:
                     link_text = link_element.text.strip()
+
                 if link or data_href_value:
                     if self.tf is True:
                         if text == "약관보기":
-                            row_data.append(("약관", link))
+                            value = ("약관", link)
                         else:
-                            row_data.append((text, link))
+                            value = (text, link)
                     else:
                         base_url = "https://epostlife.go.kr"
                         full_url = base_url + data_href_value
                         if link_text == '':
-                            row_data.append(("약관", full_url))
+                            value = ("약관", full_url)
                         else:
-                            row_data.append((text, full_url))
+                            value = (text, full_url)
                 else:
-                    row_data.append(text)
+                    value = text
+
+                # 현재 위치에 값 추가
+                row_data.append(value)
+
+                # rowspan 처리
+                rowspan = cell.get_attribute("rowspan")
+                if rowspan and int(rowspan) > 1:
+                    for i in range(1, int(rowspan)):
+                        rowspan_cache[(col_idx, row_index + i)] = value
+
+                col_idx += 1
 
             if row_data:
                 data_list.append(row_data)
