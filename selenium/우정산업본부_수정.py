@@ -186,7 +186,7 @@ for row in all_data:
             ])
 
 # ───── 5. DB 저장 ─────
-with sqlite3.connect("web_data.db") as conn:
+with sqlite3.connect("우정산업본부_web_data.db") as conn:
     cursor = conn.cursor()
 
     cursor.execute("""
