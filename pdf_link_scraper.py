@@ -63,22 +63,68 @@ class PdfLinkExtractor:
             #    여기서는 간단히 현재 창의 URL만 확인하는 것으로 제한.
             #    만약 새 창으로 PDF가 열린다면, 이 로직으로는 감지 불가.
 
-            # 3. Performance 로그를 사용하여 PDF 요청 URL 찾기 시도
-            print("Performance 로그를 통해 PDF 요청 URL 분석 시도...")
-            time.sleep(2)  # 클릭 후 네트워크 로그가 기록될 시간 확보
+            # 3. Performance 로그를 사용하여 PDF 요청 URL 찾기 시도 (리디렉션 추적 강화)
+            print("Performance 로그를 통해 PDF 요청 URL 분석 시도 (리디렉션 추적 포함)...")
+            time.sleep(3)  # 클릭 후 네트워크 로그가 충분히 기록될 시간 확보 (시간 약간 늘림)
+
+            pdf_url_from_network = None
             try:
                 logs = self.driver.get_log('performance')
+                requests = {}  # requestId를 키로 하여 요청 정보 저장
+
+                # 1단계: 모든 요청과 응답 정보 수집 및 매핑
                 for entry in logs:
                     log = json.loads(entry['message'])['message']
-                    if 'Network.responseReceived' == log['method']:
-                        params = log.get('params', {})
-                        response = params.get('response', {})
-                        mime_type = response.get('mimeType', '')
-                        if 'application/pdf' in mime_type.lower():
-                            pdf_url = response.get('url')
-                            if pdf_url and pdf_url.lower().endswith('.pdf'):
-                                print(f"방법 3: Performance 로그에서 PDF URL 발견 - {pdf_url}")
-                                return pdf_url
+                    method = log.get('method')
+                    params = log.get('params', {})
+
+                    if 'Network.requestWillBeSent' == method:
+                        requestId = params.get('requestId')
+                        requests[requestId] = {'request': params.get(
+                            'request', {}), 'redirectResponse': params.get('redirectResponse')}
+
+                    elif 'Network.responseReceived' == method:
+                        requestId = params.get('requestId')
+                        if requestId in requests:
+                            requests[requestId]['response'] = params.get('response', {})
+
+                # 2단계: PDF 응답 찾기 (리디렉션 체인 고려)
+                for req_id, data in requests.items():
+                    response = data.get('response')
+                    if not response:
+                        continue
+
+                    current_url = response.get('url', '')
+                    mime_type = response.get('mimeType', '').lower()
+                    headers = response.get('headers', {})
+                    status = response.get('status')
+
+                    content_type_header = headers.get('content-type', headers.get('Content-Type', '')).lower()
+                    content_disposition_header = headers.get(
+                        'content-disposition', headers.get('Content-Disposition', '')).lower()
+
+                    is_pdf_mime = 'application/pdf' in mime_type or 'application/pdf' in content_type_header
+                    is_pdf_disposition = 'filename=' in content_disposition_header and '.pdf' in content_disposition_header
+
+                    # 리디렉션이 아닌 실제 컨텐츠를 가진 응답(주로 200 OK)이면서 PDF인 경우
+                    if status == 200 and (is_pdf_mime or is_pdf_disposition):
+                        print(f"방법 3: Performance 로그에서 PDF 관련 응답 발견 (Status 200).")
+                        print(
+                            f"  URL: {current_url}, MIME: {mime_type}, Content-Type: {content_type_header}, Content-Disposition: {content_disposition_header}")
+                        # current_url 자체가 .pdf로 끝나는 경우에만 직접적인 URL로 간주
+                        if current_url and current_url.lower().endswith('.pdf'):
+                            print(f"  직접적인 PDF URL로 판단: {current_url}")
+                            pdf_url_from_network = current_url
+                            break  # 직접적인 PDF URL을 찾았으므로 종료
+                        else:
+                            # Content-Disposition에 .pdf가 있더라도, URL 자체가 .pdf가 아니면
+                            # (예: download.do?...) 로컬 다운로드 감지를 우선시함.
+                            print(f"  URL({current_url})이 직접적인 .pdf 링크가 아니므로 로컬 다운로드 감지로 진행합니다.")
+                            # pdf_url_from_network는 None으로 유지되어 로컬 다운로드 감지 로직으로 넘어감
+
+                if pdf_url_from_network:  # 직접적인 .pdf URL을 찾은 경우에만 반환
+                    return pdf_url_from_network
+
             except Exception as e_perf:
                 print(f"Performance 로그 분석 중 오류: {e_perf} (계속 진행)")
 
