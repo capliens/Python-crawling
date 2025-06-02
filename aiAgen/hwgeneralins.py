@@ -9,6 +9,8 @@ import time
 
 import sqlite3
 
+# 사이트 개발자도구 차단이 심함/포기
+
 options = Options()
 driver = webdriver.Chrome(options=options)
 driver.get("https://www.hwgeneralins.com/notice/ir/product-ing01.do")

@@ -1,4 +1,4 @@
-# 한화 생명
+# 한화 생명 /db 확인
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -9,27 +9,27 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
 import os
 import sys
-# db저장
+from datetime import datetime  # datetime import 추가
 
-# 프로젝트 루트를 sys.path에 추가 (fubonhyundai.py와 동일한 구조 가정)
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 try:
     from neoali.pdf_link_scraper import PdfLinkExtractor
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
 except ImportError as e:
     PdfLinkExtractor = None
-    print(f"경고: PdfLinkExtractor를 임포트할 수 없습니다 ({e}). PDF 링크 추출 기능이 비활성화됩니다.")
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
-# 다운로드 폴더 설정 (hanwhalife 전용 또는 공용 사용 가능)
 HANWHA_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "hanwhalife")
 if not os.path.exists(HANWHA_DOWNLOAD_DIR):
     os.makedirs(HANWHA_DOWNLOAD_DIR)
 
 
 def scrape_product_details(driver, pdf_extractor, category_name_text, current_product_name):
-    """상품 상세 정보 및 PDF 링크를 추출하는 헬퍼 함수. 모든 판매기간 버전을 리스트로 반환."""
+    # """상품 상세 정보 및 PDF 링크를 추출하는 헬퍼 함수. 모든 판매기간 버전을 리스트로 반환.""" # 주석 간소화
     all_versions_details = []
     detail_list_selector = "tbody#List3 tr"
     try:
@@ -38,17 +38,14 @@ def scrape_product_details(driver, pdf_extractor, category_name_text, current_pr
         detail_rows = driver.find_elements(
             By.CSS_SELECTOR, detail_list_selector)
 
-        print(f"      tbody#List3 발견된 tr 개수: {len(detail_rows)}")
+        # print(f"      tbody#List3 발견된 tr 개수: {len(detail_rows)}") # 상세 로그 제거
 
         if detail_rows:
-            print(
-                f"        {len(detail_rows)}개의 데이터 행 처리 시작.")
-            for data_row_idx_loop in range(len(detail_rows)):  # 모든 행을 데이터로 처리
+            # print(f"        {len(detail_rows)}개의 데이터 행 처리 시작.") # 상세 로그 제거
+            for data_row_idx_loop in range(len(detail_rows)):
                 data_row_element = detail_rows[data_row_idx_loop]
-                tds_in_data_row = data_row_element.find_elements(
-                    By.CSS_SELECTOR, "td")
-                print(
-                    f"          행 {data_row_idx_loop + 1} (인덱스 {data_row_idx_loop}): td 개수 = {len(tds_in_data_row)}")
+                tds_in_data_row = data_row_element.find_elements(By.CSS_SELECTOR, "td")
+                # print(f"          행 {data_row_idx_loop + 1} (인덱스 {data_row_idx_loop}): td 개수 = {len(tds_in_data_row)}") # 상세 로그 제거
 
                 current_version_detail = {
                     '판매기간': "N/A",
@@ -69,54 +66,47 @@ def scrape_product_details(driver, pdf_extractor, category_name_text, current_pr
                 if pdf_extractor:
                     if len(tds_in_data_row) > 1 and tds_in_data_row[1].find_elements(By.CSS_SELECTOR, "a, button"):
                         summary_xpath = f"{current_data_row_xpath}/td[2]/descendant::*[self::a or self::button][1]"
-                        print(f"            상품요약서 추출 시도 (XPATH: {summary_xpath})")
+                        # print(f"            상품요약서 추출 시도 (XPATH: {summary_xpath})") # 상세 로그 제거
                         summary_link_val = pdf_extractor.get_pdf_url_via_href(summary_xpath)
                         if not summary_link_val or not summary_link_val.lower().endswith('.pdf'):
                             summary_link_val = pdf_extractor.get_pdf_url_via_network_interception(summary_xpath)
                         current_version_detail['상품요약서_링크'] = summary_link_val or "N/A (추출 실패)"
-                    else:
-                        current_version_detail['상품요약서_링크'] = "N/A (링크 요소 없음)"
+                    # else: # 링크 요소 없는 경우 로그 불필요
+                        # current_version_detail['상품요약서_링크'] = "N/A (링크 요소 없음)"
 
                     if len(tds_in_data_row) > 2 and tds_in_data_row[2].find_elements(By.CSS_SELECTOR, "a, button"):
                         biz_xpath = f"{current_data_row_xpath}/td[3]/descendant::*[self::a or self::button][1]"
-                        print(f"            사업방법서 추출 시도 (XPATH: {biz_xpath})")
+                        # print(f"            사업방법서 추출 시도 (XPATH: {biz_xpath})") # 상세 로그 제거
                         biz_method_link_val = pdf_extractor.get_pdf_url_via_href(biz_xpath)
                         if not biz_method_link_val or not biz_method_link_val.lower().endswith('.pdf'):
                             biz_method_link_val = pdf_extractor.get_pdf_url_via_network_interception(biz_xpath)
                         current_version_detail['사업방법서_링크'] = biz_method_link_val or "N/A (추출 실패)"
-                    else:
-                        current_version_detail['사업방법서_링크'] = "N/A (링크 요소 없음)"
+                    # else: # 링크 요소 없는 경우 로그 불필요
+                        # current_version_detail['사업방법서_링크'] = "N/A (링크 요소 없음)"
 
                     if len(tds_in_data_row) > 3 and tds_in_data_row[3].find_elements(By.CSS_SELECTOR, "a, button"):
                         terms_xpath = f"{current_data_row_xpath}/td[4]/descendant::*[self::a or self::button][1]"
-                        print(f"            약관 추출 시도 (XPATH: {terms_xpath})")
+                        # print(f"            약관 추출 시도 (XPATH: {terms_xpath})") # 상세 로그 제거
                         terms_link_val = pdf_extractor.get_pdf_url_via_href(terms_xpath)
                         if not terms_link_val or not terms_link_val.lower().endswith('.pdf'):
                             terms_link_val = pdf_extractor.get_pdf_url_via_network_interception(terms_xpath)
                         current_version_detail['약관_링크'] = terms_link_val or "N/A (추출 실패)"
-                    else:
-                        current_version_detail['약관_링크'] = "N/A (링크 요소 없음)"
-                else:
+                    # else: # 링크 요소 없는 경우 로그 불필요
+                        # current_version_detail['약관_링크'] = "N/A (링크 요소 없음)"
+                else:  # PdfLinkExtractor 없는 경우
                     if len(tds_in_data_row) > 1 and tds_in_data_row[1].find_elements(By.CSS_SELECTOR, "a, button"):
                         current_version_detail['상품요약서_링크'] = "존재함 (Extractor 비활성)"
-                    else:
-                        current_version_detail['상품요약서_링크'] = "N/A (링크 요소 없음)"
                     if len(tds_in_data_row) > 2 and tds_in_data_row[2].find_elements(By.CSS_SELECTOR, "a, button"):
                         current_version_detail['사업방법서_링크'] = "존재함 (Extractor 비활성)"
-                    else:
-                        current_version_detail['사업방법서_링크'] = "N/A (링크 요소 없음)"
                     if len(tds_in_data_row) > 3 and tds_in_data_row[3].find_elements(By.CSS_SELECTOR, "a, button"):
                         current_version_detail['약관_링크'] = "존재함 (Extractor 비활성)"
-                    else:
-                        current_version_detail['약관_링크'] = "N/A (링크 요소 없음)"
 
                 all_versions_details.append(current_version_detail)
-                print(
-                    f"            추가된 버전 데이터: 판매기간='{current_version_detail['판매기간']}', 약관='{current_version_detail['약관_링크']}', 요약서='{current_version_detail['상품요약서_링크']}', 사업방법서='{current_version_detail['사업방법서_링크']}'")
-        else:
-            print("      tbody#List3에 데이터 행이 없음. 상세 정보 N/A 처리.")
+                # print(f"            추가된 버전 데이터: ...") # 상세 버전 데이터 로그 제거
+        # else: # 데이터 행 없는 경우 로그 불필요
+            # print("      tbody#List3에 데이터 행이 없음. 상세 정보 N/A 처리.")
     except TimeoutException:
-        print(f"      '{current_product_name}' 상세 정보(tbody#List3) 로드 시간 초과.")
+        print(f"      '{current_product_name}' 상세 정보 로드 시간 초과.")  # 상품명 명시
     except Exception as e_detail_extract:
         print(f"      '{current_product_name}' 상세 정보 추출 중 오류: {e_detail_extract}")
     return all_versions_details
@@ -139,9 +129,9 @@ def scrape_product_list_for_category(driver, pdf_extractor, category_name_text, 
     product_rows_in_category = driver.find_elements(By.CSS_SELECTOR, product_list_selector)
     num_products = len(product_rows_in_category)
     if num_products == 0:
-        print(f"  '{category_name_text}' 내 상품 없음.")
+        # print(f"  '{category_name_text}' 내 상품 없음.") # 상품 없는 경우 로그 불필요
         return
-    print(f"  '{category_name_text}' 내 {num_products}개 상품명 발견.")
+    # print(f"  '{category_name_text}' 내 {num_products}개 상품명 발견.") # 상세 로그 제거
 
     for p_idx in range(num_products):
         current_p_row = None
@@ -170,10 +160,10 @@ def scrape_product_list_for_category(driver, pdf_extractor, category_name_text, 
                 pass
 
         if not current_product_name or current_product_name == "N/A":
-            print(f"    상품명 정보 비어있음 (인덱스 {p_idx}).")
+            # print(f"    상품명 정보 비어있음 (인덱스 {p_idx}).") # 상세 로그 제거
             continue
 
-        print(f"    [{p_idx + 1}/{num_products}] 상품명 '{current_product_name}' 처리 중...")
+        # print(f"    [{p_idx + 1}/{num_products}] 상품명 '{current_product_name}' 처리 중...") # 상세 로그 제거
 
         if not is_linkable:
             product_info_base = {
@@ -289,71 +279,55 @@ def get_hanwhalife_product_info_selenium():
     base_url = "https://www.hanwhalife.com/main/disclosure/goods/disclosurenotice/DF_GDDN000_P10000.do?MENU_ID1=DF_GDGL000"
     product_data_collected = []
 
+    print("한화생명 스크래핑 시작...")
     try:
-        print("--- 판매상품 정보 수집 시작 ---")
+        print("판매상품 정보 수집 중...")
         driver.get(base_url)
         category_list_selector = "tbody#List1 tr"
         WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
             (By.CSS_SELECTOR, category_list_selector)))
         num_categories = len(driver.find_elements(By.CSS_SELECTOR, category_list_selector))
-        print(f"총 {num_categories}개의 판매상품 구분 발견.")
+        # print(f"총 {num_categories}개의 판매상품 구분 발견.") # 상세 로그 제거
         for cat_idx in range(num_categories):
-            print(f"판매상품 카테고리 인덱스 {cat_idx + 1}/{num_categories} 처리 시도...")
-            process_product_category(driver, pdf_extractor, base_url,  # 판매상품은 base_url 사용
+            # print(f"판매상품 카테고리 인덱스 {cat_idx + 1}/{num_categories} 처리 시도...") # 상세 로그 제거
+            process_product_category(driver, pdf_extractor, base_url,
                                      category_list_selector, cat_idx, product_data_collected, is_discontinued_tab=False)
+        print("판매상품 정보 수집 완료.")
 
-        print("\n--- 판매중지 상품 정보 수집 시작 ---")
-        # 판매중지 탭으로 이동하기 위해 다시 base_url 로드 (탭 상태 초기화 방지 위함)
-        # driver.get(base_url) # process_product_category에서 이미 base_url로 이동하므로 중복될 수 있음.
-        # 판매중지 탭으로 이동하는 로직은 process_product_category 호출 전에 수행되어야 함.
-
-        # 1. a#sel2 클릭 (판매중지상품 탭으로 추정)
+        print("판매중지 상품 정보 수집 중...")
         try:
-            driver.get(base_url)  # 판매중지 탭 클릭 전 페이지 초기화
+            driver.get(base_url)
             time.sleep(1)
             sel2_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "a#sel2"))
             )
-            print("a#sel2 (판매중지상품 탭) 클릭 시도...")
+            # print("a#sel2 (판매중지상품 탭) 클릭 시도...") # 상세 로그 제거
             driver.execute_script("arguments[0].click();", sel2_button)
             time.sleep(2)
-            print("a#sel2 클릭 완료.")
+            # print("a#sel2 클릭 완료.") # 상세 로그 제거
         except TimeoutException:
-            print("a#sel2 (판매중지상품 탭)을 찾거나 클릭할 수 없습니다.")
-            raise  # 이 부분 실패 시 더 이상 진행 불가 (또는 return)
-
-        # 2. ul#menu2 안의 두 번째 li 안에있는 button 클릭
+            print("판매중지상품 탭(a#sel2)을 찾거나 클릭할 수 없습니다.")
+            raise
         try:
             discontinued_trigger_button_selector = "ul#menu2 > li:nth-child(2) > button"
             discontinued_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, discontinued_trigger_button_selector))
             )
-            print(f"판매중지 상품 목록 로드 버튼 ({discontinued_trigger_button_selector}) 클릭 시도...")
+            # print(f"판매중지 상품 목록 로드 버튼 ({discontinued_trigger_button_selector}) 클릭 시도...") # 상세 로그 제거
             driver.execute_script("arguments[0].click();", discontinued_button)
             time.sleep(3)
-            print("판매중지 상품 목록 로드 버튼 클릭 완료.")
+            # print("판매중지 상품 목록 로드 버튼 클릭 완료.") # 상세 로그 제거
 
-            # 판매중지 상품 목록에 대해서도 동일한 카테고리 및 상품 처리 로직 반복
             WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
                 (By.CSS_SELECTOR, category_list_selector)))
             num_discontinued_categories = len(driver.find_elements(By.CSS_SELECTOR, category_list_selector))
-            print(f"총 {num_discontinued_categories}개의 판매중지 상품 구분 발견.")
-
-            # 판매중지 탭으로 이동한 후의 URL 또는 상태를 유지하며 카테고리 처리
-            # process_product_category는 내부적으로 driver.get(base_url)을 호출하므로,
-            # 판매중지 탭 상태에서 각 카테고리를 처리하려면 이 부분을 수정해야 함.
-            # 여기서는 각 카테고리 처리 시 판매중지 탭을 다시 클릭하는 방식으로 접근.
-            # 또는 process_product_category에 is_discontinued_tab 플래그를 전달하여 driver.get()을 건너뛰게 함.
+            # print(f"총 {num_discontinued_categories}개의 판매중지 상품 구분 발견.") # 상세 로그 제거
 
             for cat_idx in range(num_discontinued_categories):
-                print(f"판매중지 상품 카테고리 인덱스 {cat_idx + 1}/{num_discontinued_categories} 처리 시도...")
-                # 판매중지 탭이 이미 활성화된 상태이므로, base_url 대신 현재 상태에서 카테고리 처리
-                # process_product_category는 base_url을 인자로 받으므로, 판매중지 탭으로 이동 후의 URL을 전달하거나,
-                # process_product_category가 base_url을 사용하지 않도록 수정해야 함.
-                # 여기서는 is_discontinued_tab 플래그를 사용하여 process_product_category 내에서 driver.get()을 건너뛰도록 함.
-                process_product_category(driver, pdf_extractor, driver.current_url,  # 현재 URL (판매중지 탭 상태)
+                # print(f"판매중지 상품 카테고리 인덱스 {cat_idx + 1}/{num_discontinued_categories} 처리 시도...") # 상세 로그 제거
+                process_product_category(driver, pdf_extractor, driver.current_url,
                                          category_list_selector, cat_idx, product_data_collected, is_discontinued_tab=True)
-
+            print("판매중지 상품 정보 수집 완료.")
         except TimeoutException:
             print("판매중지 상품 목록 로드 버튼을 찾거나 클릭할 수 없습니다.")
         except Exception as e_discontinued_setup:
@@ -364,15 +338,71 @@ def get_hanwhalife_product_info_selenium():
     finally:
         if 'driver' in locals() and driver:
             driver.quit()
-        print("\n--- 스크립트 실행 완료 ---")
-        if product_data_collected:
-            print("--- 추출된 데이터 ---")
-            for data in product_data_collected:
-                print(data)
-        else:
-            print("추출된 데이터가 없습니다.")
+        print("한화생명 스크래핑 완료.")
     return product_data_collected
 
 
+def is_valid_hanwha_link(link_str):  # 새 링크 유효성 검사 함수
+    if not link_str or not isinstance(link_str, str):
+        return False
+    invalid_markers = ["N/A", "(추출 실패)", "(링크 요소 없음)", "(Extractor 비활성)"]
+    if any(marker in link_str for marker in invalid_markers):
+        return False
+    if link_str.strip().lower().startswith("javascript:"):  # javascript: 링크 제외
+        return False
+    return link_str.startswith("http") or link_str.startswith("/")  # 상대 경로도 일단 유효하다고 판단
+
+
 if __name__ == "__main__":
-    get_hanwhalife_product_info_selenium()
+    collected_data = get_hanwhalife_product_info_selenium()
+
+    if collected_data:
+        if DatabaseManager:
+            print("DB 저장 진행중...")
+            structured_rows_to_save = []
+            scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            company_name = "한화생명"
+
+            for item in collected_data:
+                # '보험명'에서 카테고리와 실제 상품명 분리 시도 (예: "정기보험 - 한화생명 e정기보험")
+                # 실제 상품명만 product_name_val로 사용
+                full_product_name = item.get('보험명', 'N/A')
+                product_name_val = full_product_name.split(' - ')[-1] if ' - ' in full_product_name else full_product_name
+
+                sales_period_val = item.get('판매기간', 'N/A')
+                product_code_val = None
+
+                doc_map = {
+                    "상품요약서": item.get("상품요약서_링크"),
+                    "약관": item.get("약관_링크"),
+                    "사업방법서": item.get("사업방법서_링크")
+                }
+
+                has_valid_link_for_this_product = False
+                current_product_docs = []
+                for doc_type, link_url in doc_map.items():
+                    if is_valid_hanwha_link(link_url):
+                        # 한화생명은 상대경로를 사용할 수 있으므로 절대경로로 변환
+                        if link_url.startswith("/"):
+                            link_url = "https://www.hanwhalife.com" + link_url
+
+                        has_valid_link_for_this_product = True
+                        current_product_docs.append([
+                            company_name, product_name_val, product_code_val,
+                            doc_type, sales_period_val, scraped_time, link_url
+                        ])
+
+                if has_valid_link_for_this_product:
+                    structured_rows_to_save.extend(current_product_docs)
+
+            if structured_rows_to_save:
+                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                    saved_count = db_manager.save_data(structured_rows_to_save)
+                print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
+            else:
+                print("DB에 저장할 유효한 문서 정보가 없습니다.")
+            print(f"총 스크래핑된 상품 항목(버전 포함) 수: {len(collected_data)}개")
+        else:
+            print("DatabaseManager 사용 불가. DB 저장 기능을 건너뜁니다.")
+    else:
+        print("스크래핑된 상품 데이터가 없습니다.")
