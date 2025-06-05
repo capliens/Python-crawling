@@ -1,82 +1,87 @@
-# a href=다운로드링크 /링크기능 태스트/db 연동/판매페이지
+# 매트라이프 /db 확인 /판매중단패이지
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-# from selenium.common.exceptions import NoSuchElementException, TimeoutException # 사용되지 않음
-# from selenium.webdriver.chrome.options import Options # 사용되지 않음, webdriver.ChromeOptions() 사용
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import time  # time 임포트가 누락되어 추가합니다.
+import time
+import os
+import sys
+from datetime import datetime
+
+# 프로젝트 루트를 sys.path에 추가
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    # Metlife 스크레이퍼는 PdfLinkExtractor를 직접 사용하지 않는 것으로 보이나,
+    # 다른 스크레이퍼와의 일관성 및 추후 확장성을 위해 import 시도만 남겨둘 수 있습니다.
+    # from neoali.pdf_link_scraper import PdfLinkExtractor
+    from neoali.DB_save import DatabaseManager
+except ImportError as e:
+    # PdfLinkExtractor = None # PdfLinkExtractor 사용 안 함
+    DatabaseManager = None
+    print(f"경고: DatabaseManager 모듈 임포트 실패 ({e}). DB 저장 기능이 비활성화됩니다.")
+
+METLIFE_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "metlife")
+if not os.path.exists(METLIFE_DOWNLOAD_DIR):
+    os.makedirs(METLIFE_DOWNLOAD_DIR)
 
 
 def get_metlife_product_info(scrape_target="주보험", click_all_history=False):
-    """
-    MetLife 웹사이트에서 주보험 또는 특약 정보를 가져옵니다.
-
-    Args:
-        scrape_target (str): "주보험" 또는 "특약"을 지정합니다. 기본값은 "주보험".
-        click_all_history (bool): 모든 '이전 판매기간 펼치기' 버튼을 클릭할지 여부.
-                                   True로 설정하면 모든 이전 판매기간 정보도 가져오려고 시도합니다.
-
-    Returns:
-        list: 상품 정보 딕셔너리의 리스트.
-              주보험: 'product_name', 'sales_period', 'business_manual_link', 'summary_link', 'terms_link', 'type'
-              특약: 'product_name', 'sales_period', 'terms_link', 'type'
-    """
     options = webdriver.ChromeOptions()
-    # options.add_argument('--headless')  # 브라우저 창을 띄우지 않으려면 주석 해제
-    # options.add_argument('--no-sandbox')
-    # options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
 
-    # Selenium 4.x 이상에서는 Service 객체를 사용하는 것이 권장됩니다.
-    # service = webdriver.chrome.service.Service(executable_path=driver_path) # webdriver_manager 사용으로 변경
+    # 다운로드 폴더 설정 (PdfLinkExtractor를 사용하지 않으므로 직접적인 효과는 없을 수 있으나, 일반적인 설정)
+    prefs = {
+        "download.default_directory": METLIFE_DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "plugins.always_open_pdf_externally": True
+    }
+    options.add_experimental_option("prefs", prefs)
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+    wait = WebDriverWait(driver, 10)
 
     url = "https://brand.metlife.co.kr/pn/mcvrgProd/retrieveMcvrgProdMain.do"
+    print(f"메트라이프생명 '{scrape_target}' 정보 스크래핑 시작...")
     driver.get(url)
-    time.sleep(1)  # 페이지 기본 로딩 대기
+    time.sleep(1)
 
     products_data = []
-    product_type = scrape_target  # "주보험" 또는 "특약"
+    product_type = scrape_target
 
     try:
         if scrape_target == "특약":
             try:
-                # "ul.uiDropCont > li"의 두 번째 li 클릭 (특약 탭으로 가정)
-                # CSS 선택자: ul.uiDropCont li:nth-child(2)
-                # 또는 XPath: //ul[contains(@class, 'uiDropCont')]/li[2]
-                # 실제 웹사이트의 정확한 선택자 확인 필요. 우선은 제공된 정보로 시도.
-                special_terms_tab = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "ul.uiDropCont > li:nth-child(2) > a"))  # a 태그까지 지정
+                special_terms_tab = wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "ul.uiDropCont > li:nth-child(2) > a"))
                 )
-                # 스크롤 후 JavaScript 클릭
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", special_terms_tab)
                 time.sleep(0.5)
                 driver.execute_script("arguments[0].click();", special_terms_tab)
-                print("특약 탭 클릭 시도 완료.")
-                time.sleep(3)  # 특약 테이블 로딩 대기
+                print("  특약 탭으로 전환 중...")
+                time.sleep(3)
             except Exception as e:
-                print(f"특약 탭 클릭 중 오류 발생: {e}")
+                print(f"  특약 탭 클릭 중 오류: {e}")
                 driver.quit()
                 return []
 
-        # 페이지 로딩 대기 (테이블이 나타날 때까지) - 사용자 제공 선택자로 변경
-        WebDriverWait(driver, 20).until(
+        wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.table_fix_wrapper > table.tblList > tbody > tr"))
         )
 
         if click_all_history:
-            # "이전 판매기간 펼치기" 버튼 모두 클릭 시도 - 사용자 제공 정보 기반으로 XPath 수정
-            # td > button 형태이며, 텍스트 내용을 포함하도록 가정 (예: "이전 판매기간 펼치기")
-            # 실제 버튼 텍스트나 다른 속성을 확인하여 더 정확하게 만들 수 있습니다.
+            print("  '이전 판매기간 펼치기' 버튼 처리 중...")
             try:
-                # XPath 수정: td 안에 있는 button 중 특정 텍스트를 포함하는 버튼
-                # 사용자가 제공한 클래스 정보 "button toggler"를 사용하여 XPath 수정
                 expand_buttons = driver.find_elements(By.XPATH, "//button[@class='button toggler']")
-
-                # 만약 위 XPath로 찾지 못할 경우, 텍스트 기반 검색도 시도 (Fallback)
                 if not expand_buttons:
                     expand_buttons = driver.find_elements(
                         By.XPATH, "//button[contains(normalize-space(), '이전 판매기간 펼치기') or contains(normalize-space(), '펼치기')]")
@@ -85,164 +90,176 @@ def get_metlife_product_info(scrape_target="주보험", click_all_history=False)
 
                 for button in expand_buttons:
                     try:
-                        # 요소를 뷰의 중앙으로 스크롤하거나 하단으로 스크롤하여 헤더와의 충돌을 피함
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
-                        time.sleep(0.5)  # 스크롤 후 잠시 대기
-                        # Selenium 클릭 대신 JavaScript 클릭 사용
+                        time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", button)
-                        time.sleep(1)  # 내용이 펼쳐질 때까지 대기
-                    except Exception as e:
-                        print(f"이전 판매기간 펼치기 버튼 클릭 중 오류: {e}")
-            except Exception as e:
-                print(f"이전 판매기간 펼치기 버튼 검색 중 오류: {e}")
+                        time.sleep(1)
+                    except Exception as e_btn:
+                        print(f"    펼치기 버튼 클릭 오류: {e_btn}")
+            except Exception as e_find_btn:
+                print(f"  펼치기 버튼 검색 중 오류: {e_find_btn}")
 
-        # 데이터가 로드될 시간을 충분히 줍니다.
-        time.sleep(3)
+        time.sleep(2)  # 펼치기 후 DOM 안정화 대기
 
-        # 상품 목록 행을 찾는 CSS 선택자를 사용자 제공 정보로 변경
         rows = driver.find_elements(By.CSS_SELECTOR, "div.table_fix_wrapper > table.tblList > tbody > tr")
-
-        current_main_product_name = "N/A"  # rowspan을 가진 th 또는 td에서 가져온 현재 주 상품명
+        current_main_product_name = "N/A"
 
         for i, row in enumerate(rows):
             th_cells = row.find_elements(By.TAG_NAME, "th")
             td_cells = row.find_elements(By.TAG_NAME, "td")
 
-            # 초기화
-            product_name = "N/A"
-            sales_period = "N/A"
-            business_manual_link = "N/A"
-            summary_link = "N/A"
-            terms_link = "N/A"
+            product_name, sales_period = "N/A", "N/A"
+            business_manual_link, summary_link, terms_link = "N/A", "N/A", "N/A"
 
-            # Case 1: 상품 구분(th) + 상품명(td rowspan) + 펼치기버튼(td colspan) 행
-            # 주보험: th(rowspan), td(rowspan, 상품명), td(colspan, 버튼)
-            # 특약: th(rowspan, 구분), td(rowspan, 상품명), td(colspan, 버튼) - td 개수는 동일하게 2개
             if th_cells and "rowspan" in th_cells[0].get_attribute("outerHTML") and \
-               len(td_cells) == 2 and \
-               td_cells[0].get_attribute("rowspan") and \
-               td_cells[1].get_attribute("colspan"):  # 첫번째 td가 상품명, 두번째 td가 버튼
+               len(td_cells) == 2 and td_cells[0].get_attribute("rowspan") and \
+               td_cells[1].get_attribute("colspan"):
                 current_main_product_name = td_cells[0].text.strip()
-                # 이 행은 상품명 선언 및 버튼만 있으므로 데이터 저장 안 함.
                 continue
-
-            # Case 2: 최신 판매 정보 행 (상품명 td 없음, current_main_product_name 사용)
-            # 주보험 HTML 구조: td(판매기간), td(사업방법서), td(상품요약서), td(약관), td, td, td(특약) - 총 7개 td
-            # 특약 HTML 구조: td(판매기간), td(약관) - 총 2개 td
             elif not th_cells and \
                 ((product_type == "주보험" and len(td_cells) == 7)
                  or (product_type == "특약" and len(td_cells) == 2)):
                 product_name = current_main_product_name
                 sales_period = td_cells[0].text.strip()
-
                 if product_type == "주보험":
-                    # 주보험 필드 추출
                     bm_links = td_cells[1].find_elements(By.TAG_NAME, "a")
                     business_manual_link = bm_links[0].get_attribute('href') if bm_links and bm_links[0].text.strip() != "-" else "N/A"
-
                     s_links = td_cells[2].find_elements(By.TAG_NAME, "a")
                     summary_link = s_links[0].get_attribute('href') if s_links and s_links[0].text.strip() != "-" else "N/A"
-
                     t_links = td_cells[3].find_elements(By.TAG_NAME, "a")
                     terms_link = t_links[0].get_attribute('href') if t_links and t_links[0].text.strip() != "-" else "N/A"
-
-                    products_data.append({
-                        "product_name": product_name, "sales_period": sales_period,
-                        "business_manual_link": business_manual_link, "summary_link": summary_link, "terms_link": terms_link,
-                        "type": product_type
-                    })
                 elif product_type == "특약":
-                    # 특약: 상품명(current_main_product_name), 판매기간(td_cells[0]), 약관(td_cells[1])
-                    t_links = td_cells[1].find_elements(By.TAG_NAME, "a")  # 약관 링크는 두 번째 td
+                    t_links = td_cells[1].find_elements(By.TAG_NAME, "a")
                     terms_link = t_links[0].get_attribute('href') if t_links and t_links[0].text.strip() != "-" else "N/A"
-                    products_data.append({
-                        "product_name": product_name, "sales_period": sales_period,
-                        "terms_link": terms_link, "type": product_type
-                    })
-
-            # Case 3: 펼쳐진 과거 정보 행 (숨겨진 th + 상품명 td + 나머지 정보 td들)
-            # 주보험 HTML 구조: (숨겨진 th), td(상품명), td(판매기간), td(사업방법서), td(상품요약서 또는 -), td(약관), td, td, td(특약) - 총 8개 td
-            # 특약 HTML 구조: (숨겨진 th), td(상품명), td(판매기간), td(약관) - 총 3개 td (상품명, 판매기간, 약관)
             elif th_cells and "display: none" in th_cells[0].get_attribute("outerHTML") and \
                 ((product_type == "주보험" and len(td_cells) == 8)
-                 or (product_type == "특약" and len(td_cells) == 3)):  # 특약은 td 3개 (상품명, 판매기간, 약관)
+                 or (product_type == "특약" and len(td_cells) == 3)):
                 product_name = td_cells[0].text.strip()
-                current_main_product_name = product_name  # 펼쳐진 행도 자체 상품명을 가짐
+                current_main_product_name = product_name
                 sales_period = td_cells[1].text.strip()
-
                 if product_type == "주보험":
-                    # 주보험 필드 추출
                     bm_links = td_cells[2].find_elements(By.TAG_NAME, "a")
                     business_manual_link = bm_links[0].get_attribute('href') if bm_links and bm_links[0].text.strip() != "-" else "N/A"
                     s_links = td_cells[3].find_elements(By.TAG_NAME, "a")
-                    summary_text = td_cells[3].text.strip()
-                    summary_link = s_links[0].get_attribute('href') if s_links and summary_text != "-" else "N/A"
+                    summary_link = s_links[0].get_attribute('href') if s_links and td_cells[3].text.strip() != "-" else "N/A"
                     t_links = td_cells[4].find_elements(By.TAG_NAME, "a")
                     terms_link = t_links[0].get_attribute('href') if t_links and t_links[0].text.strip() != "-" else "N/A"
-                    products_data.append({
-                        "product_name": product_name, "sales_period": sales_period,
-                        "business_manual_link": business_manual_link, "summary_link": summary_link, "terms_link": terms_link,
-                        "type": product_type
-                    })
                 elif product_type == "특약":
-                    # 특약: 상품명(td_cells[0]), 판매기간(td_cells[1]), 약관(td_cells[2])
-                    t_links = td_cells[2].find_elements(By.TAG_NAME, "a")  # 약관 링크는 세 번째 td
+                    t_links = td_cells[2].find_elements(By.TAG_NAME, "a")
                     terms_link = t_links[0].get_attribute('href') if t_links and t_links[0].text.strip() != "-" else "N/A"
-                    products_data.append({
-                        "product_name": product_name, "sales_period": sales_period,
-                        "terms_link": terms_link, "type": product_type
-                    })
             else:
-                # print(f"Skipping row for {product_type} with unhandled structure (th: {len(th_cells)}, td: {len(td_cells)}) in row {i}")
-                # print(row.get_attribute("outerHTML"))
                 continue
 
-            # 이전 판매기간 정보가 있는 행 처리 (클래스명 등으로 구분 필요) - 이 로직은 위에서 통합됨
-            # 현재는 이전 판매기간 행을 구분하는 명확한 CSS 선택자가 없어 기본 로직에 포함되지 않음.
-                # print(row.get_attribute("outerHTML")) # 잘못된 부분 제거
-                continue  # 잘못된 부분 제거
-
+            products_data.append({
+                "product_name": product_name, "sales_period": sales_period,
+                "business_manual_link": business_manual_link, "summary_link": summary_link,
+                "terms_link": terms_link, "type": product_type
+            })
     except Exception as e:
-        print(f"데이터 추출 중 오류 발생: {e}")
+        print(f"  '{scrape_target}' 데이터 추출 중 오류: {e}")
     finally:
-        driver.quit()
-
+        if driver:
+            driver.quit()
+    print(f"메트라이프생명 '{scrape_target}' 정보 스크래핑 완료.")
     return products_data
 
 
+def is_valid_metlife_link(link_str):
+    if not link_str or not isinstance(link_str, str) or not link_str.strip():
+        return False
+
+    invalid_markers = ["N/A"]  # Metlife는 주로 "N/A" 또는 실제 링크, 가끔 "-" 텍스트
+    if link_str == "-" or any(marker in link_str for marker in invalid_markers):  # "-"도 유효하지 않음으로 처리
+        return False
+
+    if link_str.strip().lower().startswith("javascript:"):  # jsFileDown 등 처리
+        # JavaScript 링크는 현재 직접적인 파일 경로로 변환하기 어려우므로 유효하지 않다고 판단.
+        # PdfLinkExtractor를 사용한다면 네트워크 가로채기로 처리 가능하나, 여기서는 사용 안 함.
+        return False
+
+    is_http_link = link_str.startswith("http")
+
+    # Metlife는 PdfLinkExtractor를 사용하지 않고 href를 직접 가져오므로,
+    # 로컬 파일 경로가 반환될 가능성은 낮음. 주로 HTTP 링크일 것.
+    # 따라서 로컬 파일 경로 검사는 생략하거나 단순화 가능.
+    is_local_pdf_file = False
+    if not is_http_link:
+        try:
+            # METLIFE_DOWNLOAD_DIR이 정의되어 있다면 사용, 아니면 일반 경로 검사
+            # 현재 METLIFE_DOWNLOAD_DIR은 PdfLinkExtractor와 함께 사용되므로, 여기서는 일반 경로만 가정
+            if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
+                is_local_pdf_file = True
+        except Exception:
+            pass
+    elif is_http_link and not link_str.lower().endswith(".pdf"):
+        # Metlife는 PDF 외 다른 문서(예: hwp)도 링크할 수 있으므로,
+        # 엄격하게 PDF만 원한다면 이 조건을 유지. 다양한 문서를 원하면 이 조건 제거 또는 수정.
+        # 현재는 PDF만 유효하다고 가정.
+        return False
+
+    return is_http_link or is_local_pdf_file
+
+
 if __name__ == '__main__':
-    # === 사용자 설정 필요 ===
-    # WebDriver 경로는 webdriver_manager가 자동으로 처리합니다.
+    all_product_entries = []
 
-    # 2. 모든 "이전 판매기간 펼치기"를 시도할지 여부 (True 또는 False)
-    click_history = True  # 사용자가 "모두 가져오기"를 선택했으므로 기본값 True
+    main_insurance_data = get_metlife_product_info(scrape_target="주보험", click_all_history=True)
+    if main_insurance_data:
+        all_product_entries.extend(main_insurance_data)
 
-    # 3. 어떤 정보를 스크래핑할지 ("주보험" 또는 "특약")
-    # 스크립트 실행 시 인자로 받거나, 여기서 직접 설정할 수 있습니다.
-    # 예시: target_info = "주보험" 또는 target_info = "특약"
-    # 우선은 주보험과 특약을 모두 가져오도록 호출 예시를 만듭니다.
+    special_terms_data = get_metlife_product_info(scrape_target="특약", click_all_history=True)
+    if special_terms_data:
+        all_product_entries.extend(special_terms_data)
 
-    print("--- 주보험 정보 ---")
-    main_insurance_list = get_metlife_product_info(scrape_target="주보험", click_all_history=click_history)
-    if main_insurance_list:
-        for idx, info in enumerate(main_insurance_list):
-            print(f"\n--- 주보험 {idx + 1} ({info.get('type', 'N/A')}) ---")
-            print(f"상품명: {info.get('product_name', 'N/A')}")
-            print(f"판매기간: {info.get('sales_period', 'N/A')}")
-            print(f"사업방법서 링크: {info.get('business_manual_link', 'N/A')}")
-            print(f"상품요약서 링크: {info.get('summary_link', 'N/A')}")
-            print(f"약관 링크: {info.get('terms_link', 'N/A')}")
+    if all_product_entries:
+        if DatabaseManager:
+            print("DB 저장 진행중...")
+            structured_rows_to_save = []
+            scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            company_name = "메트라이프생명"
+
+            for item in all_product_entries:
+                product_name_val = item.get("product_name")
+                sales_period_val = item.get("sales_period")
+                product_code_val = None  # 상품코드 정보 없음
+                product_type_val = item.get("type")  # "주보험" 또는 "특약"
+
+                # 문서 타입과 링크 매핑
+                # 특약의 경우 business_manual_link와 summary_link가 없을 수 있음
+                doc_map = {}
+                if product_type_val == "주보험":
+                    doc_map = {
+                        "사업방법서": item.get("business_manual_link"),
+                        "상품요약서": item.get("summary_link"),
+                        "약관": item.get("terms_link")
+                    }
+                elif product_type_val == "특약":
+                    doc_map = {  # 특약은 약관만 존재
+                        "약관": item.get("terms_link")
+                    }
+
+                has_valid_link_for_this_product = False
+                current_product_docs = []
+                for doc_type, link_url in doc_map.items():
+                    if is_valid_metlife_link(link_url):
+                        # Metlife 링크는 대부분 절대 URL이므로 별도 변환 불필요
+                        has_valid_link_for_this_product = True
+                        current_product_docs.append([
+                            company_name, product_name_val, product_code_val,
+                            doc_type, sales_period_val, scraped_time, link_url
+                        ])
+
+                if has_valid_link_for_this_product:
+                    structured_rows_to_save.extend(current_product_docs)
+
+            if structured_rows_to_save:
+                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                    saved_count = db_manager.save_data(structured_rows_to_save)
+                print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
+            else:
+                print("DB에 저장할 유효한 문서 정보가 없습니다.")
+            print(f"총 스크래핑된 상품 항목(주보험/특약, 버전 포함) 수: {len(all_product_entries)}개")
+        else:
+            print("DatabaseManager 사용 불가. DB 저장 기능을 건너뜁니다.")
     else:
-        print("추출된 주보험 정보가 없습니다.")
-
-    print("\n\n--- 특약 정보 ---")
-    special_terms_list = get_metlife_product_info(scrape_target="특약", click_all_history=click_history)
-    if special_terms_list:
-        for idx, info in enumerate(special_terms_list):
-            print(f"\n--- 특약 {idx + 1} ({info.get('type', 'N/A')}) ---")
-            print(f"상품명: {info.get('product_name', 'N/A')}")
-            print(f"판매기간: {info.get('sales_period', 'N/A')}")
-            # 특약은 사업방법서, 상품요약서가 없을 수 있음
-            print(f"약관 링크: {info.get('terms_link', 'N/A')}")
-    else:
-        print("추출된 상품 정보가 없습니다.")
+        print("스크래핑된 상품 데이터가 없습니다.")
