@@ -1,4 +1,4 @@
-# axa 손해보험 /db 확인
+# axa 손해보험
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -102,8 +102,43 @@ def scrape_axa_insurance_products():
 
 
 def is_valid_axa_link(link_tuple):
-    return link_tuple and isinstance(link_tuple, tuple) and len(link_tuple) == 2 and \
-        link_tuple[1] and isinstance(link_tuple[1], str) and link_tuple[1].startswith("http")
+    if not (link_tuple and isinstance(link_tuple, tuple) and len(link_tuple) == 2):
+        return False
+
+    link_str = link_tuple[1]  # URL 부분 추출
+
+    if not link_str or not isinstance(link_str, str) or not link_str.strip():
+        return False
+
+    # 일반적인 오류/상태 표시 문자열 포함 여부 검사
+    invalid_markers = ["N/A", "(추출 실패)", "(링크/버튼 없음)", "(링크 요소 없음)", "(href 없음)", "(추출 오류)"]
+    for marker in invalid_markers:
+        if marker in link_str:
+            return False
+
+    if link_str.strip().lower().startswith("javascript:"):
+        return False
+
+    is_http_link = link_str.startswith("http")
+
+    is_local_pdf_file = False
+    # HTTP 링크가 아닌 경우, 로컬 파일 경로인지 그리고 PDF 파일인지 확인
+    if not is_http_link:
+        try:
+            # axa_insurance.py에 AXA_DOWNLOAD_DIR 변수가 정의되어 있는지 확인 필요.
+            # 없다면 os.path.exists(link_str)만 사용하거나, PdfLinkExtractor의 다운로드 경로를 참조해야 함.
+            # 여기서는 link_str 자체가 (절대) 파일 경로라고 가정하고 os.path.exists를 사용합니다.
+            if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
+                is_local_pdf_file = True
+        except Exception:
+            pass
+    # HTTP 링크이지만 .pdf로 끝나지 않는 경우 (PDF만 대상으로 할 경우)
+    elif is_http_link and not link_str.lower().endswith(".pdf"):
+        # AXA 사이트가 PDF 외 다른 형식(hwp 등)의 중요 문서를 링크할 수 있다면 이 조건을 제거하거나 수정해야 합니다.
+        # 현재는 PDF만 유효하다고 가정합니다.
+        return False
+
+    return is_http_link or is_local_pdf_file
 
 
 if __name__ == "__main__":
