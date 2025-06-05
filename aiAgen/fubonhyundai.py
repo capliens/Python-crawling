@@ -227,16 +227,42 @@ def get_product_info():
     return all_products_data
 
 
-def is_valid_fubon_link(link_str):  # 새 링크 유효성 검사 함수
-    if not link_str or not isinstance(link_str, str):
+def is_valid_fubon_link(link_str):
+    if not link_str or not isinstance(link_str, str) or not link_str.strip():
         return False
-    invalid_markers = ["N/A", "(추출 오류)", "(<a> 태그 없음)", "(링크 없음)"]
-    if any(marker in link_str for marker in invalid_markers):
-        return False
-    # javascript: 로 시작하는 링크는 유효하지 않다고 간주 (실제 PDF가 아닐 가능성 높음)
+
+    invalid_markers = ["N/A", "(추출 오류)", "(<a> 태그 없음)", "(링크 없음)", "(링크/버튼 없음)", "(href 없음)"]  # 일반적인 마커 추가
+    for marker in invalid_markers:
+        if marker in link_str:
+            return False
+
     if link_str.strip().lower().startswith("javascript:"):
         return False
-    return link_str.startswith("http") or link_str.startswith("/")  # 상대 경로도 일단 유효하다고 판단
+
+    is_http_link = link_str.startswith("http")
+
+    is_local_pdf_file = False
+    # HTTP 링크가 아닌 경우, 로컬 파일 경로인지 그리고 PDF 파일인지 확인
+    if not is_http_link:
+        try:
+            # PdfLinkExtractor가 반환하는 경로가 절대 경로이거나 DOWNLOAD_DIR 기준 상대 경로일 수 있음
+            # 1. link_str 자체가 절대 경로인 경우
+            path_to_check = link_str
+            if not os.path.isabs(path_to_check):
+                # 2. DOWNLOAD_DIR 기준 상대 경로인 경우 (DOWNLOAD_DIR 변수 사용)
+                path_to_check = os.path.join(DOWNLOAD_DIR, link_str)
+
+            if os.path.exists(path_to_check) and path_to_check.lower().endswith(".pdf"):
+                is_local_pdf_file = True
+        except Exception:
+            pass
+    # HTTP 링크이지만 .pdf로 끝나지 않는 경우 (PDF만 대상으로 할 경우)
+    elif is_http_link and not link_str.lower().endswith(".pdf"):
+        # 푸본현대 사이트가 PDF 외 다른 형식의 중요 문서를 링크할 수 있다면 이 조건을 제거하거나 수정해야 합니다.
+        # 현재는 PDF만 유효하다고 가정합니다.
+        return False
+
+    return is_http_link or is_local_pdf_file
 
 
 if __name__ == "__main__":

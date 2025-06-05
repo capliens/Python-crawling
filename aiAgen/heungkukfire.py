@@ -344,8 +344,30 @@ def is_valid_heungkuk_link(link_str):  # 새 링크 유효성 검사 함수
         return False
     if link_str.strip().lower().startswith("javascript:"):
         return False
-    # 흥국화재는 상대 경로를 많이 사용하므로 http 시작 조건은 제거하고, / 시작을 허용
-    return link_str.startswith("http") or link_str.startswith("/")
+
+    is_http_link = link_str.startswith("http")
+
+    is_local_pdf_file = False
+    # HTTP 링크가 아닌 경우, 로컬 파일 경로인지 그리고 PDF 파일인지 확인
+    if not is_http_link:
+        try:
+            # PdfLinkExtractor가 반환하는 경로가 절대 경로이거나 HEUNGKUK_DOWNLOAD_DIR 기준 상대 경로일 수 있음
+            path_to_check = link_str
+            if not os.path.isabs(path_to_check):
+                # HEUNGKUK_DOWNLOAD_DIR 기준 상대 경로인 경우
+                path_to_check = os.path.join(HEUNGKUK_DOWNLOAD_DIR, link_str)
+
+            if os.path.exists(path_to_check) and path_to_check.lower().endswith(".pdf"):
+                is_local_pdf_file = True
+        except Exception:
+            pass
+    # HTTP 링크이지만 .pdf로 끝나지 않는 경우 (PDF만 대상으로 할 경우)
+    elif is_http_link and not link_str.lower().endswith(".pdf"):
+        # 흥국화재 사이트가 PDF 외 다른 형식의 중요 문서를 링크할 수 있다면 이 조건을 제거하거나 수정해야 합니다.
+        # 현재는 PDF만 유효하다고 가정합니다.
+        return False
+
+    return is_http_link or is_local_pdf_file
 
 
 if __name__ == "__main__":

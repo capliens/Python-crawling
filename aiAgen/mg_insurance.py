@@ -1,11 +1,11 @@
-# 새마을금고중앙회/db확인
-from selenium import webdriver
+# 새마을금고중앙회/DB에 링크 판매날짜 없는것도 나옴
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
@@ -44,7 +44,7 @@ class MGInsuranceScraper:
             "profile.default_content_setting_values.automatic_downloads": 1
         }
         options.add_experimental_option("prefs", prefs)
-        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+        # options.set_capability("goog:loggingPrefs", {"performance": "ALL"}) # Selenium Wire 사용 시 불필요할 수 있음
 
         service = Service(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=options)
@@ -53,7 +53,15 @@ class MGInsuranceScraper:
 
         self.pdf_extractor = None
         if PdfLinkExtractor:
-            self.pdf_extractor = PdfLinkExtractor(self.driver, MG_DOWNLOAD_DIR)
+            # URL 유효성 검증 비활성화 및 타임아웃 값 명시적 설정
+            self.pdf_extractor = PdfLinkExtractor(
+                self.driver,
+                MG_DOWNLOAD_DIR,
+                verify_url_liveness=False,
+                element_wait_timeout=20,  # 요소 대기 시간을 20초로 설정
+                request_timeout=15      # HTTP 요청 타임아웃 (기본값 15초 유지 또는 필요시 조절)
+            )
+            # 초기화 로그는 PdfLinkExtractor 내부에서 출력됨
 
     def safe_click(self, element_or_xpath, by=By.XPATH, wait_sec=5):
         """
@@ -113,38 +121,59 @@ class MGInsuranceScraper:
             time.sleep(0.5)
 
             try:
-                product_name_element = self.wait.until(EC.visibility_of_element_located(
+                product_name_element = WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located(
                     (By.CSS_SELECTOR, f"{modal_table_body_selector} tr:first-child td:nth-child(1)")))
-                product_name = product_name_element.text.strip()
+                try:
+                    product_name = product_name_element.text.strip()
+                    if not product_name:
+                        product_name = "N/A (상품명 비어있음)"
+                except Exception as e_text:
+                    print(f"모달 상품명 .text 접근 오류: {e_text}")
+                    product_name = "N/A (상품명 텍스트 오류)"
+            except TimeoutException:
+                print("모달 상품명 찾기 시간 초과.")
+                product_name = "N/A (상품명 없음)"
             except Exception as e:
-                print(f"모달 상품명 추출 오류: {e}")
+                print(f"모달 상품명 추출 중 기타 오류: {e}")
+                product_name = "N/A (상품명 오류)"
 
             try:
-                sales_period_element = self.wait.until(EC.visibility_of_element_located(
+                sales_period_element = WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located(
                     (By.CSS_SELECTOR, f"{modal_table_body_selector} tr:first-child td:nth-child(2)")))
-                sales_period = sales_period_element.text.strip()
+                try:
+                    sales_period = sales_period_element.text.strip()
+                    if not sales_period:
+                        sales_period = "N/A (판매기간 비어있음)"
+                except Exception as e_text:
+                    print(f"모달 판매기간 .text 접근 오류: {e_text}")
+                    sales_period = "N/A (판매기간 텍스트 오류)"
+            except TimeoutException:
+                print("모달 판매기간 찾기 시간 초과.")
+                sales_period = "N/A (판매기간 없음)"
             except Exception as e:
-                print(f"모달 판매기간 추출 오류: {e}")
+                print(f"모달 판매기간 추출 중 기타 오류: {e}")
+                sales_period = "N/A (판매기간 오류)"
 
             if self.pdf_extractor:
                 try:
-                    self.wait.until(EC.presence_of_element_located((By.XPATH, terms_button_xpath_modal)))
-                    terms_link_val = self.pdf_extractor.get_pdf_url_via_network_interception(terms_button_xpath_modal) or "N/A (추출 실패)"
-                except TimeoutException:
+                    # self.wait.until(EC.presence_of_element_located((By.XPATH, terms_button_xpath_modal))) # PdfLinkExtractor 내부에서 대기
+                    terms_link_val = self.pdf_extractor.extract_pdf_link(self.driver.current_url, terms_button_xpath_modal) or "N/A (추출 실패)"
+                except TimeoutException:  # PdfLinkExtractor 내부에서 처리되므로 여기서는 발생 안 할 수 있음
                     terms_link_val = "N/A (버튼 없음)"
                 except Exception as e_pdf:
                     print(f"모달 약관 링크 추출 오류: {e_pdf}")
                     terms_link_val = "N/A (추출 오류)"
 
                 try:
-                    self.wait.until(EC.presence_of_element_located((By.XPATH, biz_method_button_xpath_modal)))
-                    business_method_link_val = self.pdf_extractor.get_pdf_url_via_network_interception(biz_method_button_xpath_modal) or "N/A (추출 실패)"
+                    # self.wait.until(EC.presence_of_element_located((By.XPATH, biz_method_button_xpath_modal))) # PdfLinkExtractor 내부에서 대기
+                    business_method_link_val = self.pdf_extractor.extract_pdf_link(
+                        self.driver.current_url, biz_method_button_xpath_modal) or "N/A (추출 실패)"
                 except TimeoutException:
                     business_method_link_val = "N/A (버튼 없음)"
                 except Exception as e_pdf:
                     print(f"모달 사업방법서 링크 추출 오류: {e_pdf}")
                     business_method_link_val = "N/A (추출 오류)"
-            else:
+            else:  # pdf_extractor 없는 경우 (Fallback)
                 try:
                     if self.driver.find_elements(By.XPATH, terms_button_xpath_modal):
                         terms_link_val = "존재함 (Extractor 비활성)"
@@ -167,15 +196,11 @@ class MGInsuranceScraper:
         try:
             table_body_selector = ".mg-table-templete tbody"
             self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, table_body_selector)))
-
             initial_rows = self.driver.find_elements(By.CSS_SELECTOR, f"{table_body_selector} tr")
-            # num_rows = len(initial_rows) # 상세 행 개수 출력 제거
-            # print(f"'{status}' 탭에서 {num_rows}개의 행 발견.") # 상세 행 개수 출력 제거
-            print(f"'{status}' 탭 상품 정보 수집 중...")  # 간소화된 메시지
+            print(f"'{status}' 탭 상품 정보 수집 중...")
 
             base_tbody_xpath = "//table[contains(@class,'mg-table-templete')]/tbody"
-
-            for i in range(len(initial_rows)):  # num_rows 대신 len(initial_rows) 사용
+            for i in range(len(initial_rows)):
                 current_row_xpath = f"({base_tbody_xpath}/tr)[{i + 1}]"
                 try:
                     row_element = self.wait.until(EC.presence_of_element_located((By.XPATH, current_row_xpath)))
@@ -187,68 +212,60 @@ class MGInsuranceScraper:
                     print(f"행 {i + 1} 찾는 중 오류: {e_row_find}. 건너뜁니다.")
                     continue
 
-                product_type = "N/A"
-                product_name = "N/A"
-                sales_period = "N/A"
+                product_type_val = "N/A"  # 변수명 변경 (product_type은 이미 사용됨)
+                product_name_val = "N/A"  # 변수명 변경
+                sales_period_val = "N/A"  # 변수명 변경
                 summary_link_val = "N/A"
                 terms_link_val = "N/A"
                 business_method_link_val = "N/A"
 
                 if status == "판매중":
                     if len(cols) >= 3:
-                        product_type = cols[0].text.strip().replace('\n', ' > ')
-                        product_name = cols[1].text.strip()
-                        sales_period = cols[2].text.strip()
+                        product_type_val = cols[0].text.strip().replace('\n', ' > ')
+                        product_name_val = cols[1].text.strip()
+                        sales_period_val = cols[2].text.strip()
 
-                        if len(cols) > 3:
+                        if len(cols) > 3:  # 상품요약서
                             summary_button_xpath = f"{current_row_xpath}/td[4]/button[1]"
                             if self.pdf_extractor:
                                 try:
-                                    self.wait.until(EC.presence_of_element_located((By.XPATH, summary_button_xpath)))
-                                    summary_link_val = self.pdf_extractor.get_pdf_url_via_network_interception(summary_button_xpath) or "N/A (추출 실패)"
-                                except TimeoutException:
-                                    summary_link_val = "N/A (버튼 없음)"
-                                except Exception as e_sl:
-                                    print(f"  상품요약서 링크 추출 오류 ({product_name}): {e_sl}")
+                                    # self.wait.until(EC.presence_of_element_located((By.XPATH, summary_button_xpath))) # PdfLinkExtractor 내부에서 대기
+                                    summary_link_val = self.pdf_extractor.extract_pdf_link(
+                                        self.driver.current_url, summary_button_xpath) or "N/A (추출 실패)"
+                                except Exception as e_sl:  # TimeoutException 포함 모든 예외 처리
+                                    print(f"  상품요약서 링크 추출 오류 ({product_name_val}): {e_sl}")
                                     summary_link_val = "N/A (추출 오류)"
                             elif cols[3].find_elements(By.XPATH, ".//button"):
                                 summary_link_val = "존재함 (Extractor 비활성)"
 
-                        if len(cols) > 4:
+                        if len(cols) > 4:  # 약관
                             terms_button_xpath = f"{current_row_xpath}/td[5]/button[1]"
                             if self.pdf_extractor:
                                 try:
-                                    self.wait.until(EC.presence_of_element_located((By.XPATH, terms_button_xpath)))
-                                    terms_link_val = self.pdf_extractor.get_pdf_url_via_network_interception(terms_button_xpath) or "N/A (추출 실패)"
-                                except TimeoutException:
-                                    terms_link_val = "N/A (버튼 없음)"
+                                    terms_link_val = self.pdf_extractor.extract_pdf_link(self.driver.current_url, terms_button_xpath) or "N/A (추출 실패)"
                                 except Exception as e_tl:
-                                    print(f"  약관 링크 추출 오류 ({product_name}): {e_tl}")
+                                    print(f"  약관 링크 추출 오류 ({product_name_val}): {e_tl}")
                                     terms_link_val = "N/A (추출 오류)"
                             elif cols[4].find_elements(By.XPATH, ".//button"):
                                 terms_link_val = "존재함 (Extractor 비활성)"
 
-                        if len(cols) > 5:
+                        if len(cols) > 5:  # 사업방법서
                             biz_button_xpath = f"{current_row_xpath}/td[6]/button[1]"
                             if self.pdf_extractor:
                                 try:
-                                    self.wait.until(EC.presence_of_element_located((By.XPATH, biz_button_xpath)))
-                                    business_method_link_val = self.pdf_extractor.get_pdf_url_via_network_interception(
-                                        biz_button_xpath) or "N/A (추출 실패)"
-                                except TimeoutException:
-                                    business_method_link_val = "N/A (버튼 없음)"
+                                    business_method_link_val = self.pdf_extractor.extract_pdf_link(
+                                        self.driver.current_url, biz_button_xpath) or "N/A (추출 실패)"
                                 except Exception as e_bl:
-                                    print(f"  사업방법서 링크 추출 오류 ({product_name}): {e_bl}")
+                                    print(f"  사업방법서 링크 추출 오류 ({product_name_val}): {e_bl}")
                                     business_method_link_val = "N/A (추출 오류)"
                             elif cols[5].find_elements(By.XPATH, ".//button"):
                                 business_method_link_val = "존재함 (Extractor 비활성)"
 
                     product_list.append({
-                        "판매상태": status, "종류": product_type, "상품명": product_name,
-                        "판매기간": sales_period, "상품요약서_링크": summary_link_val,
+                        "판매상태": status, "종류": product_type_val, "상품명": product_name_val,
+                        "판매기간": sales_period_val, "상품요약서_링크": summary_link_val,
                         "약관": terms_link_val, "사업방법서": business_method_link_val
                     })
-                    # print(f"  판매중 추가: {product_name}, 요약서: {summary_link_val}, 약관: {terms_link_val}, 사업방법서: {business_method_link_val}") # 상세 추가 로그 제거
 
                 elif status == "판매중지":
                     if len(cols) >= 1:
@@ -266,10 +283,8 @@ class MGInsuranceScraper:
 
                             if detail_button:
                                 button_xpath = f"{current_row_xpath}/td[{button_td_idx + 1}]/button[1]"
-                                # print(f"    판매중지 상품 '{cols[0].text.strip() if cols else '이름모름'}' 상세 버튼 클릭 시도 (XPath: {button_xpath})") # 상세 클릭 로그 제거
                                 clicked_successfully = self.safe_click(button_xpath, by=By.XPATH, wait_sec=1.5)
                                 if not clicked_successfully:
-                                    # print(f"      상세 버튼 클릭 실패: {cols[0].text.strip() if cols else '이름모름'}") # 상세 실패 로그 제거
                                     continue
 
                                 modal_data = self._extract_product_details_from_modal()
@@ -278,9 +293,10 @@ class MGInsuranceScraper:
                                 terms_link_val = modal_data[2]
                                 business_method_link_val = modal_data[3]
 
-                                product_name = modal_product_name if modal_product_name else (cols[0].text.strip() if cols else "N/A")
-                                sales_period = modal_sales_period if modal_sales_period else "N/A"
-                                product_type = "N/A (판매중지)"
+                                product_name_val = modal_product_name if modal_product_name and modal_product_name != "N/A (상품명 없음)" else (
+                                    cols[0].text.strip() if cols else "N/A")
+                                sales_period_val = modal_sales_period if modal_sales_period and modal_sales_period != "N/A (판매기간 없음)" else "N/A"
+                                product_type_val = "N/A (판매중지)"
                                 try:
                                     close_button_selector = ".ur-modal__close.ur-icon.ur-icon--line.opus-icon__close"
                                     close_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, close_button_selector)))
@@ -295,56 +311,47 @@ class MGInsuranceScraper:
                                     except TimeoutException:
                                         print("ESC로도 모달 닫기 실패.")
                                 product_list.append({
-                                    "판매상태": status, "종류": product_type, "상품명": product_name,
-                                    "판매기간": sales_period, "상품요약서_링크": "N/A (판매중지)",  # 판매중지 상품은 요약서 없음
+                                    "판매상태": status, "종류": product_type_val, "상품명": product_name_val,
+                                    "판매기간": sales_period_val, "상품요약서_링크": "N/A (판매중지)",
                                     "약관": terms_link_val, "사업방법서": business_method_link_val
                                 })
-                                # print(f"  판매중지 추가: {product_name}, 약관: {terms_link_val}, 사업방법서: {business_method_link_val}") # 상세 추가 로그 제거
                             else:
                                 if len(cols) == 1 and "데이터가 없습니다" in cols[0].text:
-                                    # print("판매중지 탭에 상품 데이터가 없습니다.") # 데이터 없음 로그는 유지해도 좋음
                                     break
-                                # else: # 버튼 못찾는 경우는 오류 로그로 남기지 않음
-                                    # print(f"판매중지 상품 테이블의 행에서 상세 보기 버튼을 찾을 수 없습니다: {cols[0].text if cols else '내용 없음'}")
                         except Exception as e_detail_btn:
-                            print(f"판매중지 상품 '{product_name}' 처리 중 오류: {e_detail_btn}")  # 오류 발생 상품명 명시
+                            print(f"판매중지 상품 '{product_name_val}' 처리 중 오류: {e_detail_btn}")
         except Exception as e_tab:
             print(f"'{status}' 탭 상품 목록 처리 중 오류: {e_tab}")
-        print(f"'{status}' 탭 상품 정보 수집 완료.")  # 탭 완료 메시지
+        print(f"'{status}' 탭 상품 정보 수집 완료.")
         return product_list
 
     def get_all_products(self):
         self.driver.get(self.base_url)
         all_products = []
-        print("MG새마을금고보험 스크래핑 시작...")  # 전체 시작 메시지
+        print("MG새마을금고보험 스크래핑 시작...")
         try:
-            # print("판매 중인 상품 정보를 가져옵니다...") # _get_products_from_current_tab 내부 메시지로 대체
             self.wait.until(EC.presence_of_element_located(
                 (By.CSS_SELECTOR, ".mg-table-templete tbody")))
             all_products = self._get_products_from_current_tab(all_products, "판매중")
-            print("판매중 상품 스크래핑 완료.")  # 각 탭 완료 메시지
+            print("판매중 상품 스크래핑 완료.")
         except Exception as e:
             print(f"판매중 상품 스크래핑 중 오류: {e}")
 
         try:
-            print("판매중지 상품 스크래핑 진행중...")  # 다음 탭 진행 메시지
+            print("판매중지 상품 스크래핑 진행중...")
             tab_selector = "div.ur-tab__label-wrapper > a#sur-tab-box__37__label__1"
             discontinued_tab_button = self.wait.until(EC.element_to_be_clickable(
                 (By.CSS_SELECTOR, tab_selector)))
             self.driver.execute_script("arguments[0].click();", discontinued_tab_button)
-            # print("판매 중지 탭 클릭 시도 완료.") # 상세 로그 제거
             active_tab_css_selector = "a#sur-tab-box__37__label__1.ur-tab__label--active"
             self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, active_tab_css_selector)))
-            # print("판매 중지 탭 활성화 확인.") # 상세 로그 제거
             time.sleep(1)
             self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".mg-table-templete tbody")))
-            # print("판매 중지 탭으로 이동 및 새 테이블 로드 확인.") # 상세 로그 제거
-            # print("판매 중지된 상품 정보를 가져옵니다...") # _get_products_from_current_tab 내부 메시지로 대체
             all_products = self._get_products_from_current_tab(all_products, "판매중지")
-            print("판매중지 상품 스크래핑 완료.")  # 각 탭 완료 메시지
+            print("판매중지 상품 스크래핑 완료.")
         except Exception as e:
             print(f"판매중지 상품 스크래핑 중 오류: {e}")
-        print("MG새마을금고보험 스크래핑 완료.")  # 전체 완료 메시지
+        print("MG새마을금고보험 스크래핑 완료.")
         return all_products
 
     def close(self):
@@ -352,24 +359,38 @@ class MGInsuranceScraper:
             self.driver.quit()
 
 
-def is_valid_link(link_str):
-    print(f"is_valid_link 검사 시작: '{link_str}'")  # 디버깅 로그
-    if not link_str or not isinstance(link_str, str):
-        print(f"  결과: False (유효하지 않은 문자열 또는 None)")  # 디버깅 로그
+def is_valid_and_pdf_link(link_str):
+    # print(f"  [is_valid_pdf_link] 검사 시작: '{link_str}'")
+    if not link_str or not isinstance(link_str, str) or not link_str.strip():
+        # print(f"  [is_valid_pdf_link] 결과: False (유효하지 않은 문자열 또는 None)")
         return False
 
-    invalid_markers = ["N/A", "Extractor 비활성", "추출 실패", "추출 오류", "버튼 없음"]
+    invalid_markers = ["N/A", "Extractor 비활성", "추출 실패", "추출 오류", "버튼 없음", "(링크 없음)", "(상품명 없음)", "(판매기간 없음)"]
     for marker in invalid_markers:
         if marker in link_str:
-            print(f"  결과: False (부적절한 마커 '{marker}' 포함)")  # 디버깅 로그
+            # print(f"  [is_valid_pdf_link] 결과: False (부적절한 마커 '{marker}' 포함: {link_str})")
             return False
 
-    if not link_str.startswith("http"):
-        print(f"  결과: False (http로 시작하지 않음)")  # 디버깅 로그
-        return False
+    is_http_link = link_str.startswith("http")
+    is_local_file_path = os.path.isabs(link_str) and "://" not in link_str  # 절대 경로이고 URL 스킴이 없는 경우
 
-    print(f"  결과: True (유효한 링크)")  # 디버깅 로그
-    return True
+    if is_http_link:  # 웹 URL인 경우 .pdf로 끝나야 유효하다고 간주 (더 엄격하게)
+        if link_str.lower().endswith(".pdf"):
+            # print(f"  [is_valid_pdf_link] 결과: True (HTTP PDF 링크: {link_str})")
+            return True
+        else:
+            # print(f"  [is_valid_pdf_link] 결과: False (HTTP 링크이지만 .pdf로 끝나지 않음: {link_str})")
+            return False
+    elif is_local_file_path:  # 로컬 파일 경로인 경우 .pdf로 끝나고 실제 파일이 존재해야 유효
+        if link_str.lower().endswith(".pdf") and os.path.exists(link_str):
+            # print(f"  [is_valid_pdf_link] 결과: True (유효한 로컬 PDF 파일 경로: {link_str})")
+            return True
+        else:
+            # print(f"  [is_valid_pdf_link] 결과: False (로컬 파일 경로가 PDF가 아니거나 존재하지 않음: {link_str})")
+            return False
+
+    # print(f"  [is_valid_pdf_link] 결과: False (알 수 없는 링크 형식: {link_str})")
+    return False
 
 
 if __name__ == "__main__":
@@ -392,11 +413,7 @@ if __name__ == "__main__":
             for product in products_data:
                 product_name_val = product.get('상품명', 'N/A')
                 sales_period_val = product.get('판매기간', 'N/A')
-                product_code_val = None  # product_code는 NULL로 저장
-
-                # 각 문서 타입에 대해 링크 유효성 검사 및 저장 데이터 생성
-                # 판매중: 상품요약서, 약관, 사업방법서
-                # 판매중지: 약관, 사업방법서 (요약서는 없음)
+                product_code_val = None
 
                 links_to_process = []
                 if product.get('판매상태') == '판매중':
@@ -412,16 +429,11 @@ if __name__ == "__main__":
                 for link_info in links_to_process:
                     doc_type = link_info['type']
                     link_url = link_info['url']
-                    if is_valid_link(link_url):
+                    if is_valid_and_pdf_link(link_url):
                         has_valid_link_for_this_product = True
                         current_product_docs.append([
-                            company_name,
-                            product_name_val,
-                            product_code_val,
-                            doc_type,
-                            sales_period_val,
-                            scraped_time,
-                            link_url
+                            company_name, product_name_val, product_code_val,
+                            doc_type, sales_period_val, scraped_time, link_url
                         ])
 
                 if has_valid_link_for_this_product:
