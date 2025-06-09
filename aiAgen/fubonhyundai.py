@@ -1,11 +1,11 @@
-# 현대라이프생명보험/db 확인
+# 현대라이프생명보험
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium import webdriver
+from seleniumwire import webdriver  # selenium 대신 seleniumwire 임포트
 import time
 import os
 import sys
@@ -43,19 +43,19 @@ def get_product_info():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    # 네트워크 요청 가로채기를 위해 로깅 활성화 (PdfLinkExtractor의 방법3에 필요할 수 있음)
-    chrome_options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    # Selenium Wire는 네트워크 요청 가로채기를 자동으로 처리하므로, 별도의 로깅 설정은 필요 없습니다.
 
     driver = None
     pdf_extractor = None
     try:
         service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Selenium Wire의 Chrome 드라이버를 사용합니다.
+        driver = webdriver.Chrome(service=service, seleniumwire_options={}, options=chrome_options)
         if PdfLinkExtractor:
             pdf_extractor = PdfLinkExtractor(driver, DOWNLOAD_DIR)
-        # else: # PdfLinkExtractor 없는 경우 로그는 불필요
-            # print("PdfLinkExtractor가 없으므로 PDF 링크 추출을 시도하지 않습니다.")
-
+            print("PdfLinkExtractor가 성공적으로 로드되었습니다.")
+        else:
+            print("경고: PdfLinkExtractor가 로드되지 않았습니다. PDF 링크 추출 기능이 제한될 수 있습니다.")
     except Exception as e:
         print(f"웹 드라이버 설정 중 오류 발생: {e}")
         if driver:
@@ -133,53 +133,33 @@ def get_product_info():
 
                     summary_pdf_url, terms_pdf_url, biz_method_pdf_url = "N/A", "N/A", "N/A"
 
-                    if pdf_extractor:
-                        # 상품요약서
-                        if cells[2].find_elements(By.TAG_NAME, "a"):
-                            try:
-                                summary_pdf_url = pdf_extractor.get_pdf_url_via_href(summary_link_xpath)
-                                if not summary_pdf_url or not summary_pdf_url.lower().endswith('.pdf'):
-                                    summary_pdf_url = pdf_extractor.get_pdf_url_via_network_interception(summary_link_xpath)
-                                summary_pdf_url = summary_pdf_url or "N/A"
-                            except Exception:
-                                summary_pdf_url = "N/A (추출 오류)"
-                        # 약관
-                        if cells[3].find_elements(By.TAG_NAME, "a"):
-                            try:
-                                terms_pdf_url = pdf_extractor.get_pdf_url_via_href(terms_link_xpath)
-                                if not terms_pdf_url or not terms_pdf_url.lower().endswith('.pdf'):
-                                    terms_pdf_url = pdf_extractor.get_pdf_url_via_network_interception(terms_link_xpath)
-                                terms_pdf_url = terms_pdf_url or "N/A"
-                            except Exception:
-                                terms_pdf_url = "N/A (추출 오류)"
-                        # 사업방법서
-                        if cells[4].find_elements(By.TAG_NAME, "a"):
-                            try:
-                                biz_method_pdf_url = pdf_extractor.get_pdf_url_via_href(biz_method_link_xpath)
-                                if not biz_method_pdf_url or not biz_method_pdf_url.lower().endswith('.pdf'):
-                                    biz_method_pdf_url = pdf_extractor.get_pdf_url_via_network_interception(biz_method_link_xpath)
-                                biz_method_pdf_url = biz_method_pdf_url or "N/A"
-                            except Exception:
-                                biz_method_pdf_url = "N/A (추출 오류)"
-                    else:  # PdfLinkExtractor 없는 경우, 단순 href 추출
-                        try:
-                            summary_pdf_url = cells[2].find_element(By.TAG_NAME, "a").get_attribute('href') or "N/A"
-                        except NoSuchElementException:  # 구체적인 예외 처리
-                            summary_pdf_url = "N/A (링크 없음)"
-                        except Exception:  # 기타 예외 발생 시
-                            summary_pdf_url = "N/A (오류)"
-                        try:
-                            terms_pdf_url = cells[3].find_element(By.TAG_NAME, "a").get_attribute('href') or "N/A"
-                        except NoSuchElementException:  # 구체적인 예외 처리
-                            terms_pdf_url = "N/A (링크 없음)"
-                        except Exception:  # 기타 예외 발생 시
-                            terms_pdf_url = "N/A (오류)"
-                        try:
-                            biz_method_pdf_url = cells[4].find_element(By.TAG_NAME, "a").get_attribute('href') or "N/A"
-                        except NoSuchElementException:  # 구체적인 예외 처리
-                            biz_method_pdf_url = "N/A (링크 없음)"
-                        except Exception:  # 기타 예외 발생 시
-                            biz_method_pdf_url = "N/A (오류)"
+                    # 링크 추출 로직
+                    summary_pdf_url, terms_pdf_url, biz_method_pdf_url = "N/A", "N/A", "N/A"
+
+                    def get_link(cell_index, link_xpath):
+                        link = "N/A"
+                        if cells[cell_index].find_elements(By.TAG_NAME, "a"):
+                            if pdf_extractor:
+                                try:
+                                    link = pdf_extractor.extract_pdf_link(None, link_xpath)  # target_url은 현재 사용되지 않으므로 None
+                                    link = link or "N/A"
+                                except Exception as e:
+                                    link = f"N/A (추출 오류: {e})"
+                            else:  # PdfLinkExtractor 없는 경우, 단순 href 추출
+                                try:
+                                    link = cells[cell_index].find_element(By.TAG_NAME, "a").get_attribute('href') or "N/A"
+                                except NoSuchElementException:
+                                    link = "N/A (링크 없음)"
+                                except Exception as e:
+                                    link = f"N/A (오류: {e})"
+                        # 상대 경로를 절대 경로로 변환
+                        if link and link.startswith("/"):
+                            link = "https://www.fubonhyundai.com" + link
+                        return link
+
+                    summary_pdf_url = get_link(2, summary_link_xpath)
+                    terms_pdf_url = get_link(3, terms_link_xpath)
+                    biz_method_pdf_url = get_link(4, biz_method_link_xpath)
 
                     product_data = {
                         "상품명": product_name, "판매기간": sales_period,
@@ -188,25 +168,23 @@ def get_product_info():
                     }
                     all_products_data.append(product_data)
                 except Exception as e_row:
-                    print(f"  페이지 {page_num}, 행 {row_idx + 1} 처리 중 오류: {e_row}")  # 페이지 번호 추가
+                    print(f"  페이지 {page_num}, 행 {row_idx + 1} 처리 중 오류: {e_row}")
 
             next_page_button_selector = "nav#pagenation > a.paging__anchor--next"
             next_page_buttons = driver.find_elements(By.CSS_SELECTOR, next_page_button_selector)
 
             if not next_page_buttons:
-                # print("다음 페이지 버튼 없음. 마지막 페이지.") # 상세 로그 제거
                 break
             try:
-                next_page_button = WebDriverWait(driver, 5).until(  # 대기 시간 단축
+                next_page_button = WebDriverWait(driver, 5).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, next_page_button_selector))
                 )
                 stale_check_element = current_product_rows[0] if current_product_rows else None
-                # print("다음 페이지로 이동합니다.") # 상세 로그 제거
                 driver.execute_script("arguments[0].click();", next_page_button)
                 if stale_check_element:
                     WebDriverWait(driver, 10).until(EC.staleness_of(stale_check_element))
                 else:
-                    time.sleep(0.5)  # 짧은 대기
+                    time.sleep(0.5)
                 time.sleep(0.5)
                 page_num += 1
             except TimeoutException:
@@ -231,7 +209,7 @@ def is_valid_fubon_link(link_str):
     if not link_str or not isinstance(link_str, str) or not link_str.strip():
         return False
 
-    invalid_markers = ["N/A", "(추출 오류)", "(<a> 태그 없음)", "(링크 없음)", "(링크/버튼 없음)", "(href 없음)"]  # 일반적인 마커 추가
+    invalid_markers = ["N/A", "(추출 오류)", "(<a> 태그 없음)", "(링크 없음)", "(링크/버튼 없음)", "(href 없음)"]
     for marker in invalid_markers:
         if marker in link_str:
             return False
@@ -273,7 +251,7 @@ if __name__ == "__main__":
             print("DB 저장 진행중...")
             structured_rows_to_save = []
             scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            company_name = "현대라이프생명보험"  # 회사명 변경
+            company_name = "현대라이프생명보험"
 
             for prod_info in scraped_data:
                 product_name_val = prod_info.get("상품명")
@@ -289,11 +267,8 @@ if __name__ == "__main__":
                 has_valid_link_for_this_product = False
                 current_product_docs = []
                 for doc_type, link_url in doc_map.items():
+                    # is_valid_fubon_link 호출 전에 이미 절대 경로로 변환되었으므로, 여기서는 추가 변환 불필요
                     if is_valid_fubon_link(link_url):
-                        # 푸본현대생명은 상대경로를 사용할 수 있으므로 절대경로로 변환 시도
-                        if link_url.startswith("/"):
-                            link_url = "https://www.fubonhyundai.com" + link_url
-
                         has_valid_link_for_this_product = True
                         current_product_docs.append([
                             company_name, product_name_val, product_code_val,

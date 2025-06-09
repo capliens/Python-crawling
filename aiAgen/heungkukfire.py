@@ -1,12 +1,11 @@
-# 흥국화재 / db 확인
-from selenium import webdriver
+# 흥국화재
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
-# from bs4 import BeautifulSoup # Selenium으로 대체 예정
+from seleniumwire import webdriver  # selenium 대신 seleniumwire 임포트
 import time
 import os
 import sys
@@ -85,54 +84,45 @@ def get_product_info_from_page_selenium(driver, pdf_extractor):
             if pdf_extractor:
                 # 약관
                 try:
-                    terms_link_val = pdf_extractor.get_pdf_url_via_href(terms_link_xpath)
-                    if not terms_link_val or not (terms_link_val.lower().endswith('.pdf') or 'javascript:' in terms_link_val):
-                        terms_link_val = pdf_extractor.get_pdf_url_via_network_interception(terms_link_xpath)
+                    # PdfLinkExtractor의 extract_pdf_link 메서드를 사용
+                    terms_link_val = pdf_extractor.extract_pdf_link(None, terms_link_xpath)
                 except Exception:
                     pass
                 terms_link_val = terms_link_val or "N/A (추출 실패)"  # 실패 시 명시
                 if terms_link_val == "N/A (추출 실패)" and len(link_elements_in_cell) > 0:  # 순서 기반 fallback
                     first_link_xpath = f"{current_row_xpath}/td[5]/a[1]"
                     try:
-                        terms_link_val = pdf_extractor.get_pdf_url_via_href(first_link_xpath)
-                        if not terms_link_val or not (terms_link_val.lower().endswith('.pdf') or 'javascript:' in terms_link_val):
-                            terms_link_val = pdf_extractor.get_pdf_url_via_network_interception(first_link_xpath)
+                        terms_link_val = pdf_extractor.extract_pdf_link(None, first_link_xpath)
                     except Exception:
                         pass
                 terms_link_val = terms_link_val or "N/A"
 
                 # 사업방법서
                 try:
-                    biz_method_link_val = pdf_extractor.get_pdf_url_via_href(biz_method_link_xpath)
-                    if not biz_method_link_val or not (biz_method_link_val.lower().endswith('.pdf') or 'javascript:' in biz_method_link_val):
-                        biz_method_link_val = pdf_extractor.get_pdf_url_via_network_interception(biz_method_link_xpath)
+                    # PdfLinkExtractor의 extract_pdf_link 메서드를 사용
+                    biz_method_link_val = pdf_extractor.extract_pdf_link(None, biz_method_link_xpath)
                 except Exception:
                     pass
                 biz_method_link_val = biz_method_link_val or "N/A (추출 실패)"
                 if biz_method_link_val == "N/A (추출 실패)" and len(link_elements_in_cell) > 1:
                     second_link_xpath = f"{current_row_xpath}/td[5]/a[2]"
                     try:
-                        biz_method_link_val = pdf_extractor.get_pdf_url_via_href(second_link_xpath)
-                        if not biz_method_link_val or not (biz_method_link_val.lower().endswith('.pdf') or 'javascript:' in biz_method_link_val):
-                            biz_method_link_val = pdf_extractor.get_pdf_url_via_network_interception(second_link_xpath)
+                        biz_method_link_val = pdf_extractor.extract_pdf_link(None, second_link_xpath)
                     except Exception:
                         pass
                 biz_method_link_val = biz_method_link_val or "N/A"
 
                 # 상품요약서
                 try:
-                    summary_link_val = pdf_extractor.get_pdf_url_via_href(summary_link_xpath)
-                    if not summary_link_val or not (summary_link_val.lower().endswith('.pdf') or 'javascript:' in summary_link_val):
-                        summary_link_val = pdf_extractor.get_pdf_url_via_network_interception(summary_link_xpath)
+                    # PdfLinkExtractor의 extract_pdf_link 메서드를 사용
+                    summary_link_val = pdf_extractor.extract_pdf_link(None, summary_link_xpath)
                 except Exception:
                     pass
                 summary_link_val = summary_link_val or "N/A (추출 실패)"
                 if summary_link_val == "N/A (추출 실패)" and len(link_elements_in_cell) > 2:
                     third_link_xpath = f"{current_row_xpath}/td[5]/a[3]"
                     try:
-                        summary_link_val = pdf_extractor.get_pdf_url_via_href(third_link_xpath)
-                        if not summary_link_val or not (summary_link_val.lower().endswith('.pdf') or 'javascript:' in summary_link_val):
-                            summary_link_val = pdf_extractor.get_pdf_url_via_network_interception(third_link_xpath)
+                        summary_link_val = pdf_extractor.extract_pdf_link(None, third_link_xpath)
                     except Exception:
                         pass
                 summary_link_val = summary_link_val or "N/A"
@@ -283,9 +273,10 @@ def main():
         "plugins.always_open_pdf_externally": True
     }
     options.add_experimental_option("prefs", prefs)
-    options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    # Selenium Wire는 네트워크 요청 가로채기를 자동으로 처리하므로, 별도의 로깅 설정은 필요 없습니다.
 
-    driver = webdriver.Chrome(service=service, options=options)
+    # Selenium Wire의 Chrome 드라이버를 사용합니다.
+    driver = webdriver.Chrome(service=service, seleniumwire_options={}, options=options)
     driver.set_page_load_timeout(30)  # 페이지 로드 타임아웃 설정
 
     pdf_extractor = None
@@ -311,7 +302,8 @@ def main():
             ins_type_elements = driver.find_elements(By.CSS_SELECTOR, "ul#id_insTypeTab > li > a")
             for i, el in enumerate(ins_type_elements):
                 el_text = el.text.strip() if el.text.strip() else f"상품군{i + 1}"
-                ins_type_tab_links_selectors.append((el_text, (By.XPATH, f"(//ul[@id='id_insTypeTab']/li/a)[{i + 1}]")))
+                ins_type_tab_links_selectors.append((el_text, (By.XPATH,
+                                                               f"(//ul[@id='id_insTypeTab']/li/a)[{i + 1}]")))  # noqa: E501
             if not ins_type_tab_links_selectors:
                 ins_type_tab_links_selectors.append(("기본 상품군", None))
         except Exception as e:

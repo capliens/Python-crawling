@@ -1,4 +1,4 @@
-# 새마을금고중앙회/DB에 링크 판매날짜 없는것도 나옴
+# 새마을금고중앙회
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options

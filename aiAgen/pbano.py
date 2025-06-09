@@ -1,5 +1,5 @@
-# 수호천사동양생명/db확인/판매페이지는 페이지오류
-from selenium import webdriver
+# 수호천사동양생명/판매페이지는 페이지오류
+from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,7 +9,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
-from datetime import datetime  # datetime import 추가
+from datetime import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -17,10 +17,10 @@ if project_root not in sys.path:
 
 try:
     from neoali.pdf_link_scraper import PdfLinkExtractor
-    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+    from neoali.DB_save import DatabaseManager
 except ImportError as e:
     PdfLinkExtractor = None
-    DatabaseManager = None  # DatabaseManager 초기화 추가
+    DatabaseManager = None
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 PBANO_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "pbano")
@@ -31,7 +31,6 @@ if not os.path.exists(PBANO_DOWNLOAD_DIR):
 def scrape_pbano_products():
     print("PBA손해보험 스크래핑 시작...")  # 함수 시작 시 로그
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # headless 옵션 활성화
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     prefs = {
@@ -93,42 +92,17 @@ def scrape_pbano_products():
                         # 상품요약서 (td[6] -> XPath td index 6)
                         if len(cells) > 5:
                             summary_xpath = f"{current_row_xpath_prefix}/td[6]/a"
-                            try:
-                                # 링크 요소가 실제로 있는지 확인 후 추출 시도
-                                wait.until(EC.presence_of_element_located((By.XPATH, summary_xpath)))
-                                summary_link_val = pdf_extractor.get_pdf_url_via_href(summary_xpath) or \
-                                    pdf_extractor.get_pdf_url_via_network_interception(summary_xpath) or "N/A (추출 실패)"
-                            except TimeoutException:
-                                summary_link_val = "N/A (링크/버튼 없음)"
-                            except Exception as e_sl:
-                                print(f"  상품요약서 링크 추출 오류 ({product_name}): {e_sl}")
-                                summary_link_val = "N/A (추출 오류)"
+                            summary_link_val = pdf_extractor.extract_pdf_link(None, summary_xpath)
 
                         # 사업방법서 (td[7] -> XPath td index 7)
                         if len(cells) > 6:
                             biz_method_xpath = f"{current_row_xpath_prefix}/td[7]/a"
-                            try:
-                                wait.until(EC.presence_of_element_located((By.XPATH, biz_method_xpath)))
-                                business_method_link_val = pdf_extractor.get_pdf_url_via_href(biz_method_xpath) or \
-                                    pdf_extractor.get_pdf_url_via_network_interception(biz_method_xpath) or "N/A (추출 실패)"
-                            except TimeoutException:
-                                business_method_link_val = "N/A (링크/버튼 없음)"
-                            except Exception as e_bm:
-                                print(f"  사업방법서 링크 추출 오류 ({product_name}): {e_bm}")
-                                business_method_link_val = "N/A (추출 오류)"
+                            business_method_link_val = pdf_extractor.extract_pdf_link(None, biz_method_xpath)
 
                         # 보험약관 (td[8] -> XPath td index 8)
                         if len(cells) > 7:
                             terms_xpath = f"{current_row_xpath_prefix}/td[8]/a"
-                            try:
-                                wait.until(EC.presence_of_element_located((By.XPATH, terms_xpath)))
-                                insurance_terms_link_val = pdf_extractor.get_pdf_url_via_href(terms_xpath) or \
-                                    pdf_extractor.get_pdf_url_via_network_interception(terms_xpath) or "N/A (추출 실패)"
-                            except TimeoutException:
-                                insurance_terms_link_val = "N/A (링크/버튼 없음)"
-                            except Exception as e_it:
-                                print(f"  보험약관 링크 추출 오류 ({product_name}): {e_it}")
-                                insurance_terms_link_val = "N/A (추출 오류)"
+                            insurance_terms_link_val = pdf_extractor.extract_pdf_link(None, terms_xpath)
                     else:
                         if len(cells) > 5:
                             try:

@@ -1,16 +1,16 @@
-# 흫국생명/DB확인 + a태그 속성만가져오기
+# 흫국생명
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException, TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 # from webdriver_manager.chrome import ChromeDriverManager # 사용 안 함
 from selenium.webdriver.chrome.service import Service
 import time
 import os
 import sys
-from datetime import datetime  # datetime import 추가
+import datetime  # datetime import 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -128,11 +128,13 @@ def extract_detail_data(driver, wait, pdf_extractor, product_name_full, is_disco
             if len(tds_in_detail) > terms_td_list_idx:
                 terms_xpath = f"{base_tr_xpath}/td[{terms_td_list_idx + 1}]/a[1]"
                 try:
-                    test_name = terms_xpath.get_attribute('href')  # test
-                    print(test_name.text.strip())  # test
-                    detail_info["약관_링크"] = pdf_extractor.get_pdf_url_via_href(terms_xpath) or \
-                        pdf_extractor.get_pdf_url_via_network_interception(terms_xpath) or "N/A (추출 실패)"
-                except Exception:  # 상세 오류 로그 대신 실패로 간주
+                    link_element = driver.find_element(By.XPATH, terms_xpath)
+                    href = link_element.get_attribute('href')
+                    if href and href.startswith('/'):
+                        href = "https://www.heungkuklife.co.kr" + href
+                        print("약관:" + href)
+                    detail_info["약관_링크"] = href
+                except Exception:
                     detail_info["약관_링크"] = "N/A (추출 오류)"
             # else: # td 인덱스 범위 밖 로그 불필요
                 # detail_info["약관_링크"] = "N/A (td 인덱스 범위 밖)"
@@ -140,8 +142,12 @@ def extract_detail_data(driver, wait, pdf_extractor, product_name_full, is_disco
             if len(tds_in_detail) > biz_method_td_list_idx:
                 biz_method_xpath = f"{base_tr_xpath}/td[{biz_method_td_list_idx + 1}]/a[1]"
                 try:
-                    detail_info["사업방법서_링크"] = pdf_extractor.get_pdf_url_via_href(biz_method_xpath) or \
-                        pdf_extractor.get_pdf_url_via_network_interception(biz_method_xpath) or "N/A (추출 실패)"
+                    link_element = driver.find_element(By.XPATH, biz_method_xpath)
+                    href = link_element.get_attribute('href')
+                    if href and href.startswith('/'):
+                        href = "https://www.heungkuklife.co.kr" + href
+                    detail_info["사업방법서_링크"] = href
+                    print("사업업:" + href)
                 except Exception:
                     detail_info["사업방법서_링크"] = "N/A (추출 오류)"
             # else:
@@ -150,8 +156,12 @@ def extract_detail_data(driver, wait, pdf_extractor, product_name_full, is_disco
             if len(tds_in_detail) > summary_td_list_idx:
                 summary_xpath = f"{base_tr_xpath}/td[{summary_td_list_idx + 1}]/a[1]"
                 try:
-                    detail_info["상품요약서_링크"] = pdf_extractor.get_pdf_url_via_href(summary_xpath) or \
-                        pdf_extractor.get_pdf_url_via_network_interception(summary_xpath) or "N/A (추출 실패)"
+                    link_element = driver.find_element(By.XPATH, summary_xpath)
+                    href = link_element.get_attribute('href')
+                    if href and href.startswith('/'):
+                        href = "https://www.heungkuklife.co.kr" + href
+                    detail_info["상품요약서_링크"] = href
+                    print("요약서:" + href)
                 except Exception:
                     detail_info["상품요약서_링크"] = "N/A (추출 오류)"
             # else:
@@ -212,183 +222,160 @@ def process_product_names(driver, wait, pdf_extractor, division_name, all_data, 
 
 def get_heungkuklife_product_info():
     print("흥국생명 스크래핑 시작...")  # 함수 시작 시 로그
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # headless 옵션 활성화
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    prefs = {
-        "download.default_directory": HEUNGKUKLIFE_DOWNLOAD_DIR,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "plugins.always_open_pdf_externally": True
-    }
-    chrome_options.add_experimental_option("prefs", prefs)
-    chrome_options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    driver = None  # driver 변수를 try 블록 밖에서 선언하여 finally에서 접근 가능하게 함
+    try:  # 함수 전체를 감싸는 try 블록 시작
+        chrome_options = Options()
 
-    driver = None
-    try:
-        print("WebDriver 초기화 시도 (시스템 PATH 의존)...")
-        driver = webdriver.Chrome(options=chrome_options)
-        print("WebDriver 초기화 성공 (시스템 PATH 의존).")
-    except Exception as e_init:
-        print(f"WebDriver 초기화 실패 (시스템 PATH 의존): {e_init}")
-        print("webdriver_manager를 사용한 초기화를 시도합니다.")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        prefs = {
+            "download.default_directory": HEUNGKUKLIFE_DOWNLOAD_DIR,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "plugins.always_open_pdf_externally": True
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
+        chrome_options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+
         try:
-            from webdriver_manager.chrome import ChromeDriverManager
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            print("webdriver_manager를 사용하여 WebDriver 초기화 성공.")
-        except Exception as e_wdm:
-            print(f"webdriver_manager 사용 초기화도 실패: {e_wdm}")
-            print("ChromeDriver가 시스템 PATH에 설정되어 있거나, webdriver_manager가 올바르게 설치되었는지 확인해주세요.")
+            print("WebDriver 초기화 시도 (시스템 PATH 의존)...")
+            driver = webdriver.Chrome(options=chrome_options)
+            print("WebDriver 초기화 성공 (시스템 PATH 의존).")
+        except Exception as e_init:
+            print(f"WebDriver 초기화 실패 (시스템 PATH 의존): {e_init}")
+            print("webdriver_manager를 사용한 초기화를 시도합니다.")
+            try:
+                from webdriver_manager.chrome import ChromeDriverManager
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                print("webdriver_manager를 사용하여 WebDriver 초기화 성공.")
+            except Exception as e_wdm:
+                print(f"webdriver_manager 사용 초기화도 실패: {e_wdm}")
+                print("ChromeDriver가 시스템 PATH에 설정되어 있거나, webdriver_manager가 올바르게 설치되었는지 확인해주세요.")
+                return []
+
+        if driver is None:
+            print("WebDriver를 초기화할 수 없습니다.")
             return []
 
-    if driver is None:
-        print("WebDriver를 초기화할 수 없습니다.")
-        return []
+        wait = WebDriverWait(driver, 15)
 
-    wait = WebDriverWait(driver, 15)
+        pdf_extractor = None
+        if PdfLinkExtractor:
+            pdf_extractor = PdfLinkExtractor(driver, HEUNGKUKLIFE_DOWNLOAD_DIR)
 
-    pdf_extractor = None
-    if PdfLinkExtractor:
-        pdf_extractor = PdfLinkExtractor(driver, HEUNGKUKLIFE_DOWNLOAD_DIR)
+        all_data = []
 
-    all_data = []
+        print("판매상품 정보 수집 중...")
+        selling_url = "https://www.heungkuklife.co.kr/front/public/saleProduct.do?searchFlgSale=Y"
+        driver.get(selling_url)
+        time.sleep(2)  # 페이지 로드 대기
 
-    print("판매상품 정보 수집 중...")
-    selling_url = "https://www.heungkuklife.co.kr/front/public/saleProduct.do?searchFlgSale=Y"
-    driver.get(selling_url)
-    time.sleep(2)  # 페이지 로드 대기
-
-    try:
-        division_items_selling = get_filter_items(driver, wait, "1. 구분선택")
-        if not division_items_selling:
-            # print("판매상품 구분선택 항목을 찾을 수 없습니다. 단일 구분으로 처리합니다.") # 상세 로그 제거
-            process_product_names(driver, wait, pdf_extractor, "기본 판매상품 구분", all_data, is_discontinued_page=False)
-        else:
-            # print(f"총 {len(division_items_selling)}개의 판매상품 구분선택 발견.") # 상세 로그 제거
-            for i in range(len(division_items_selling)):
-                current_division_items = get_filter_items(driver, wait, "1. 구분선택")  # Stale 방지
-                if i >= len(current_division_items):
-                    continue
-                division_element = current_division_items[i]
-                division_name = division_element.text.strip()
-                print(f"  판매상품 구분: '{division_name}' 처리 중...")
-                if not safe_click(driver, division_element, wait_sec=1):
-                    driver.get(selling_url)
-                    time.sleep(1)  # 실패 시 페이지 복구 후 다음으로
-                    continue
-                process_product_names(driver, wait, pdf_extractor, division_name, all_data, is_discontinued_page=False)
-                driver.get(selling_url)  # 다음 구분을 위해 페이지 복구
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 구분선택')]")))
-                time.sleep(0.5)
-    except Exception as e:
-        print(f"판매상품 스크래핑 중 오류: {e}")
-    print("판매상품 정보 수집 완료.")
-
-    print("판매중지 상품 정보 수집 중...")
-    discontinued_url = "https://www.heungkuklife.co.kr/front/public/saleProduct.do?searchFlgSale=N&beforeYn=N"
-    driver.get(discontinued_url)
-    time.sleep(2)
-
-    try:
-        period_items = get_filter_items(driver, wait, "1. 기간선택")
-        if not period_items:
-            division_items_discontinued = get_filter_items(driver, wait, "1. 구분선택")
-            if not division_items_discontinued:
-                process_product_names(driver, wait, pdf_extractor, "기본 판매중지 기간/구분", all_data, is_discontinued_page=True)
+        try:
+            division_items_selling = get_filter_items(driver, wait, "1. 구분선택")
+            if not division_items_selling:
+                # print("판매상품 구분선택 항목을 찾을 수 없습니다. 단일 구분으로 처리합니다.") # 상세 로그 제거
+                process_product_names(driver, wait, pdf_extractor, "기본 판매상품 구분", all_data, is_discontinued_page=False)
             else:
-                for i in range(len(division_items_discontinued)):
+                # print(f"총 {len(division_items_selling)}개의 판매상품 구분선택 발견.") # 상세 로그 제거
+                for i in range(len(division_items_selling)):
                     current_division_items = get_filter_items(driver, wait, "1. 구분선택")  # Stale 방지
                     if i >= len(current_division_items):
                         continue
-                    div_el = current_division_items[i]
-                    div_name = div_el.text.strip()
-                    print(f"  판매중지 구분: '{div_name}' 처리 중...")
-                    if not safe_click(driver, div_el, wait_sec=1):
+                    division_element = current_division_items[i]
+                    division_name = division_element.text.strip()
+                    print(f"  판매상품 구분: '{division_name}' 처리 중...")
+                    if not safe_click(driver, division_element, wait_sec=1):
+                        driver.get(selling_url)
+                        time.sleep(1)  # 실패 시 페이지 복구 후 다음으로
+                        continue
+                    process_product_names(driver, wait, pdf_extractor, division_name, all_data, is_discontinued_page=False)
+                    driver.get(selling_url)  # 다음 구분을 위해 페이지 복구
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 구분선택')]")))
+                    time.sleep(0.5)
+        except Exception as e:
+            print(f"판매상품 스크래핑 중 오류: {e}")
+        print("판매상품 정보 수집 완료.")
+
+        print("판매중지 상품 정보 수집 중...")
+        discontinued_url = "https://www.heungkuklife.co.kr/front/public/saleProduct.do?searchFlgSale=N&beforeYn=N"
+        driver.get(discontinued_url)
+        time.sleep(2)
+
+        try:
+            period_items = get_filter_items(driver, wait, "1. 기간선택")
+            if not period_items:
+                division_items_discontinued = get_filter_items(driver, wait, "1. 구분선택")
+                if not division_items_discontinued:
+                    process_product_names(driver, wait, pdf_extractor, "기본 판매중지 기간/구분", all_data, is_discontinued_page=True)
+                else:
+                    for i in range(len(division_items_discontinued)):
+                        current_division_items = get_filter_items(driver, wait, "1. 구분선택")  # Stale 방지
+                        if i >= len(current_division_items):
+                            continue
+                        div_el = current_division_items[i]
+                        div_name = div_el.text.strip()
+                        print(f"  판매중지 구분: '{div_name}' 처리 중...")
+                        if not safe_click(driver, div_el, wait_sec=1):
+                            driver.get(discontinued_url)
+                            time.sleep(1)
+                            continue
+                        process_product_names(driver, wait, pdf_extractor, f"판매중지 - {div_name}", all_data, is_discontinued_page=True)
+                        driver.get(discontinued_url)
+                        WebDriverWait(driver, 10).until(EC.presence_of_element_located(
+                            (By.XPATH, "//dt[contains(text(), '1. 구분선택') or contains(text(), '1. 기간선택')]")))
+                        time.sleep(0.5)
+            else:
+                for i in range(len(period_items)):
+                    current_period_items = get_filter_items(driver, wait, "1. 기간선택")  # Stale 방지
+                    if i >= len(current_period_items):
+                        continue
+                    period_element = current_period_items[i]
+                    period_name = period_element.text.strip()
+                    print(f"  판매중지 기간: '{period_name}' 처리 중...")
+                    if not safe_click(driver, period_element, wait_sec=1):
                         driver.get(discontinued_url)
                         time.sleep(1)
                         continue
-                    process_product_names(driver, wait, pdf_extractor, f"판매중지 - {div_name}", all_data, is_discontinued_page=True)
-                    driver.get(discontinued_url)
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located(
-                        (By.XPATH, "//dt[contains(text(), '1. 구분선택') or contains(text(), '1. 기간선택')]")))
-                    time.sleep(0.5)
-        else:
-            for i in range(len(period_items)):
-                current_period_items = get_filter_items(driver, wait, "1. 기간선택")  # Stale 방지
-                if i >= len(current_period_items):
-                    continue
-                period_element = current_period_items[i]
-                period_name = period_element.text.strip()
-                print(f"  판매중지 기간: '{period_name}' 처리 중...")
-                if not safe_click(driver, period_element, wait_sec=1):
-                    driver.get(discontinued_url)
-                    time.sleep(1)
-                    continue
 
-                division_items_after_period = get_filter_items(driver, wait, "2. 구분선택")
-                if not division_items_after_period:
-                    process_product_names(driver, wait, pdf_extractor, f"판매중지 - {period_name} - 기본구분", all_data, is_discontinued_page=True)
-                else:
-                    for j in range(len(division_items_after_period)):
-                        current_division_items_dp = get_filter_items(driver, wait, "2. 구분선택")  # Stale 방지
-                        if j >= len(current_division_items_dp):
-                            continue
-                        div_el_dp = current_division_items_dp[j]
-                        div_name_dp = div_el_dp.text.strip()
-                        print(f"    판매중지 구분: '{div_name_dp}' (기간: {period_name}) 처리 중...")
-                        if not safe_click(driver, div_el_dp, wait_sec=1):
-                            break
-                        process_product_names(driver, wait, pdf_extractor,
-                                              f"판매중지 - {period_name} - {div_name_dp}", all_data, is_discontinued_page=True)
+                    division_items_after_period = get_filter_items(driver, wait, "2. 구분선택")
+                    if not division_items_after_period:
+                        process_product_names(driver, wait, pdf_extractor, f"판매중지 - {period_name} - 기본구분", all_data, is_discontinued_page=True)
+                    else:
+                        for j in range(len(division_items_after_period)):
+                            current_division_items_dp = get_filter_items(driver, wait, "2. 구분선택")  # Stale 방지
+                            if j >= len(current_division_items_dp):
+                                continue
+                            div_el_dp = current_division_items_dp[j]
+                            div_name_dp = div_el_dp.text.strip()
+                            print(f"    판매중지 구분: '{div_name_dp}' (기간: {period_name}) 처리 중...")
+                            if not safe_click(driver, div_el_dp, wait_sec=1):
+                                break
+                            process_product_names(driver, wait, pdf_extractor,
+                                                  f"판매중지 - {period_name} - {div_name_dp}", all_data, is_discontinued_page=True)
 
-                        period_xpath_to_reclick = f"(//dt[contains(text(), '1. 기간선택')]/following-sibling::dd//ul[contains(@class,'select1')]//a)[{i + 1}]"
-                        if not safe_click(driver, period_xpath_to_reclick, by=By.XPATH, wait_sec=1):
-                            driver.get(discontinued_url)
-                            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 기간선택')]")))
+                            period_xpath_to_reclick = (
+                                f"(//dt[contains(text(), '1. 기간선택')]/following-sibling::dd"
+                                f"//ul[contains(@class,'select1')]//a)[{i + 1}]"
+                            )
+                            if not safe_click(driver, period_xpath_to_reclick, by=By.XPATH, wait_sec=1):
+                                driver.get(discontinued_url)
+                                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 기간선택')]")))
+                                time.sleep(0.5)
+                                break
+                            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '2. 구분선택')]")))
                             time.sleep(0.5)
-                            break
-                        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '2. 구분선택')]")))
-                        time.sleep(0.5)
-                driver.get(discontinued_url)  # 다음 기간선택을 위해 페이지 복구
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 기간선택')]")))
-                time.sleep(0.5)
-    except Exception as e:
-        print(f"판매중지 상품 스크래핑 중 오류: {e}")
-    print("판매중지 상품 정보 수집 완료.")
-    finally:
+                    driver.get(discontinued_url)  # 다음 기간선택을 위해 페이지 복구
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 기간선택')]")))
+                    time.sleep(0.5)
+        except Exception as e:
+            print(f"판매중지 상품 스크래핑 중 오류: {e}")
+        print("판매중지 상품 정보 수집 완료.")
+        return all_data  # try 블록 내에서 return
+    finally:  # 함수 전체에 대한 finally 블록
         if driver:
             driver.quit()
-    print("흥국생명 스크래핑 완료.")
-    return all_data
-
-
-def is_valid_heungkuklife_link(link_str):  # 링크 유효성 검사 함수 추가
-    if not link_str or not isinstance(link_str, str) or not link_str.strip():
-        return False
-    invalid_markers = ["N/A", "(추출 실패)", "(링크 요소 없음)", "(Extractor 비활성)", "(링크/버튼 없음)", "(href 없음)", "(추출 오류)", "(td 인덱스 범위 밖)"]
-    if any(marker in link_str for marker in invalid_markers):
-        return False
-    if link_str.strip().lower().startswith("javascript:"):
-        return False
-
-    is_http_link = link_str.startswith("http")
-    is_local_pdf_file = False
-    if not is_http_link:
-        try:
-            path_to_check = link_str
-            if not os.path.isabs(path_to_check):
-                path_to_check = os.path.join(HEUNGKUKLIFE_DOWNLOAD_DIR, link_str)
-            if os.path.exists(path_to_check) and path_to_check.lower().endswith(".pdf"):
-                is_local_pdf_file = True
-        except Exception:
-            pass
-    elif is_http_link and not link_str.lower().endswith(".pdf"):
-        # PDF가 아닌 다른 문서 형식은 일단 제외 (필요시 이 조건 완화)
-        return False
-    return is_http_link or is_local_pdf_file
 
 
 if __name__ == "__main__":
@@ -398,7 +385,7 @@ if __name__ == "__main__":
         if DatabaseManager:
             print("DB 저장 진행중...")
             structured_rows_to_save = []
-            scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            scraped_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             company_name = "흥국생명"
 
             for item_data in all_scraped_data:
@@ -416,20 +403,16 @@ if __name__ == "__main__":
                     "사업방법서": item_data.get("사업방법서_링크")
                 }
 
-                has_valid_link_for_this_product = False
                 current_product_docs = []
                 for doc_type, link_url in doc_map.items():
-                    if is_valid_heungkuklife_link(link_url):
-                        if link_url.startswith("/"):  # 상대경로 처리
-                            link_url = "https://www.heungkuklife.co.kr" + link_url
-
-                        has_valid_link_for_this_product = True
+                    # 링크 유효성 검사를 제거하고, 링크가 'N/A'나 오류 메시지가 아닌 경우만 추가
+                    if link_url and "N/A" not in link_url:
                         current_product_docs.append([
                             company_name, product_name_val, product_code_val,
                             doc_type, sales_period_val, scraped_time, link_url
                         ])
 
-                if has_valid_link_for_this_product:
+                if current_product_docs:
                     structured_rows_to_save.extend(current_product_docs)
 
             if structured_rows_to_save:
