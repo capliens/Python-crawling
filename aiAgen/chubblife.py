@@ -78,156 +78,412 @@ def get_chubblife_product_info():
 
             # 탭 클릭 후 상품 목록이 새로 로드될 때까지 기다림
             try:
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, product_rows_selector))
+                WebDriverWait(driver, 30).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, product_rows_selector))
                 )
                 print("새로운 탭의 상품 목록 로드 확인.")
-                time.sleep(2)  # 추가 대기
+                time.sleep(3)  # 추가 대기
             except TimeoutException:
                 print(f"'{tab_text}' 탭의 상품 목록을 찾는 데 시간 초과. 다음 탭으로 이동합니다.")
                 continue  # 다음 탭으로 넘어감
 
-                # 모달창 열기 및 정보 가져오는 기능 주석 처리 (사용자 요청)
-                try:
-                    modal_trigger_selector = "td:nth-child(3) > a"  # 3번째 td 안의 a
-                    modal_trigger = row.find_element(By.CSS_SELECTOR, modal_trigger_selector)
+            # --- 페이지네이션 처리 ---
+            pagination_container_selector = "div.pageArea.type02"
+            next_button_selector = "a.btnNext"
+            prev_button_selector = "a.btnPrev"
+            page_link_selector = "div.pageArea.type02 > a.btnPage"  # 페이지 번호 링크
 
-                    # 클릭 전 요소가 보이도록 스크롤
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", modal_trigger)
-                    time.sleep(0.5)
+            while True:  # 전체 페이지 묶음을 순회하는 루프
+                print("  새로운 페이지 묶음 스크래핑 시작...")  # Flake8 오류 수정
 
-                    # ElementClickInterceptedException 방지를 위해 JavaScript 클릭 시도
-                    driver.execute_script("arguments[0].click();", modal_trigger)
-                    print(f"'{product_name_in_list}' 상품의 모달창 열기 시도...")
+                # 현재 보이는 페이지 번호 링크들을 가져옴
+                all_page_elements = driver.find_elements(By.CSS_SELECTOR, "div.pageArea.type02 > strong.num, div.pageArea.type02 > a.btnPage")
 
-                    # 모달창 로딩 대기
-                    modal_selector = "div#pop_official_06"
-                    WebDriverWait(driver, 20).until(
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
-                    )
-                    print("모달창 로드 완료.")
-                    time.sleep(1)  # 모달 내부 컨텐츠 로딩 추가 대기
-
-                    modal_element = driver.find_element(By.CSS_SELECTOR, modal_selector)
-
-                    # 모달 내부 정보 추출
-                    # 사용자 정보: div.tableType05 > table > thead 안에 tr 들안에 td들이며 첫번째 tr 은 th로 이루어져 있음
-                    # tbody가 없으므로 table 바로 아래 tr들을 찾고, 첫번째 tr이 헤더인지 확인
-                    modal_table_all_rows = modal_element.find_elements(By.CSS_SELECTOR, "div.tableType05 > table  tr")
-
-                    sales_period = "N/A"
-                    summary_link = "N/A"
-                    business_manual_link = "N/A"
-                    terms_link = "N/A"
-
-                    current_modal_product_name = "N/A"  # 모달 내 rowspan 상품명 추적
-
-                    # 모달 내 테이블의 실제 데이터 행(td로 구성된 행)을 찾습니다.
-                    # 첫번째 tr은 th로 이루어져 있으므로 건너뛰거나, th_cells로 확인
-                    data_rows_in_modal = []
-                    for r_idx, m_row in enumerate(modal_table_all_rows):
-                        m_th_cells = m_row.find_elements(By.TAG_NAME, "th")
-                        m_td_cells = m_row.find_elements(By.TAG_NAME, "td")
-
-                        if m_th_cells and m_th_cells[0].text.strip() == "상품명":  # 헤더 행 (첫번째 tr)
-                            continue  # 헤더는 건너뜀
-
-                        # 실제 데이터 행 (td로 시작)
-                        if m_td_cells:
-                            data_rows_in_modal.append(m_td_cells)
-
-                    if not data_rows_in_modal:
-                        print("모달 내에서 데이터 행을 찾지 못했습니다.")
-                        # 모달 닫기 로직으로 바로 이동
-                    else:
-                        # 첫번째 데이터 행의 첫번째 td가 상품명이고 rowspan을 가질 수 있음
-                        # 이 상품명을 current_modal_product_name으로 설정하고, 이후 행에서 재사용
-                        first_data_row_cells = data_rows_in_modal[0]
-                        if first_data_row_cells and first_data_row_cells[0].get_attribute("rowspan"):
-                            current_modal_product_name = first_data_row_cells[0].text.strip()
-                        else:  # rowspan이 없으면 해당 행의 상품명 사용
-                            current_modal_product_name = first_data_row_cells[0].text.strip()  # 첫번째 td가 상품명
-
-                        for m_td_cells in data_rows_in_modal:
-                            # 상품명 (모달 내): m_td_cells[0] (rowspan 가능성)
-                            # 판매기간: m_td_cells[1] (일반 상품) 또는 m_td_cells[0] (특약)
-                            # 상품요약서: m_td_cells[2] > a (일반 상품)
-                            # 사업방법서: m_td_cells[3] > a (일반 상품) 또는 m_td_cells[2] > a (특약)
-                            # 약관: m_td_cells[4] > a (일반 상품) 또는 m_td_cells[3] > a (특약)
-
-                            # 현재 행의 상품명 (rowspan 처리)
-                            if m_td_cells[0].get_attribute("rowspan"):  # 현재 td가 rowspan을 가지면 새로운 상품명
-                                current_modal_product_name = m_td_cells[0].text.strip()
-                                # 이 경우, 판매기간은 m_td_cells[1]부터 시작
-                                sales_period_idx = 1
-                                summary_idx = 2
-                                bm_idx = 3
-                                terms_idx = 4
-                            else:  # rowspan이 없으면 이전 상품명 사용
-                                sales_period_idx = 0  # 판매기간이 첫번째 td
-                                summary_idx = 1
-                                bm_idx = 2
-                                terms_idx = 3
-
-                            # 특약과 일반 상품의 td 개수 차이 처리
-                            if len(m_td_cells) >= 5:  # 일반 상품 (상품요약서, 사업방법서 모두 있음)
-                                sales_period = m_td_cells[sales_period_idx].text.strip()
-                                summary_links_modal = m_td_cells[summary_idx].find_elements(By.TAG_NAME, "a")
-                                summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
-                                bm_links_modal = m_td_cells[bm_idx].find_elements(By.TAG_NAME, "a")
-                                business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
-                                terms_links_modal = m_td_cells[terms_idx].find_elements(By.TAG_NAME, "a")
-                                terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
-                            elif len(m_td_cells) == 4:  # 특약 (상품요약서 없음)
-                                sales_period = m_td_cells[sales_period_idx].text.strip()
-                                summary_link = "N/A"  # 특약은 상품요약서 없음
-                                bm_links_modal = m_td_cells[bm_idx - 1].find_elements(By.TAG_NAME, "a")  # 인덱스 조정
-                                business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
-                                terms_links_modal = m_td_cells[terms_idx - 1].find_elements(By.TAG_NAME, "a")  # 인덱스 조정
-                                terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
-                            else:
-                                print(f"모달 내 데이터 행의 td 개수가 예상과 다릅니다: {len(m_td_cells)}개. 건너뜁니다.")
-                                continue  # 이 행은 건너뛰고 다음 상품으로
-
-                            products_data.append({
-                                "product_name": current_modal_product_name,  # 모달 내 상품명 사용
-                                "sales_period": sales_period,
-                                "summary_link": summary_link,
-                                "terms_link": terms_link,
-                                "business_manual_link": business_manual_link
-                            })
-
-                            print(f"  판매기간: {sales_period}")
-                            print(f"  상품요약서: {summary_link}")
-                            print(f"  사업방법서: {business_manual_link}")
-                            print(f"  약관: {terms_link}")
-
-                    # 모달 닫기 (사용자 제공 선택자: button#closeBtn)
+                # 페이지 번호와 해당 요소 매핑
+                page_info_list = []
+                for elem in all_page_elements:
                     try:
-                        close_button = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button#closeBtn"))
-                        )
-                        driver.execute_script("arguments[0].click();", close_button)
-                        print("모달 닫기 버튼 클릭.")
-                        WebDriverWait(driver, 10).until_not(
-                            EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
-                        )
-                        print("모달 닫힘 확인.")
-                        time.sleep(1)  # 모달 닫히는 시간 대기
-                    except Exception as e_modal_close:
-                        print(f"모달 닫기 중 오류: {e_modal_close}")
-                        # 모달이 안 닫혀도 다음으로 진행 시도
+                        page_num = int(elem.text.strip())
+                        page_info_list.append({"num": page_num, "element": elem})
+                    except ValueError:
+                        pass  # 숫자가 아닌 요소는 무시 (예: 이전/다음 버튼)
 
-                except TimeoutException:
-                    print(f"'{product_name_in_list}' 상품의 모달창을 열거나 내용을 찾는 데 시간 초과.")
-                except NoSuchElementException:
-                    print(f"'{product_name_in_list}' 상품의 모달창 열기 버튼 또는 내부 요소를 찾을 수 없음.")
-                except Exception as e_modal:
-                    print(f"'{product_name_in_list}' 상품 모달 처리 중 오류: {e_modal}")
+                # 페이지 번호를 숫자로 정렬
+                page_info_list.sort(key=lambda x: x["num"])
 
-                # --- 페이지네이션 처리 ---
-                pagination_container_selector = "div.pageArea.type02"
-                next_button_selector = "a.btnNext"
+                # 각 페이지 번호를 순회하며 클릭
+                for i, page_info in enumerate(page_info_list):
+                    page_num = page_info["num"]
+                    page_element = page_info["element"]
+
+                    # 이미 활성화된 페이지 (strong.num)는 클릭하지 않음
+                    if page_element.tag_name == "strong" and "num" in page_element.get_attribute("class"):
+                        print(f"  현재 활성화된 페이지: {page_num}")
+                        # 현재 페이지의 상품 목록 스크래핑 (모달창 활성화)
+                        product_rows_selector = "div.tableBasicList > table > tbody > tr"
+                        try:
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_all_elements_located((By.CSS_SELECTOR, product_rows_selector))
+                            )
+                            product_elements = driver.find_elements(By.CSS_SELECTOR, product_rows_selector)
+                            if not product_elements:
+                                print("  현재 페이지에 상품이 없습니다.")
+                            else:
+                                print(f"  현재 페이지에서 {len(product_elements)}개의 상품 발견.")
+
+                            for row_idx, row in enumerate(product_elements):
+                                try:
+                                    product_name_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(2)")  # a 태그 제거
+                                    product_name_in_list = product_name_element.text.strip()
+                                    print(f"    상품명 (목록): {product_name_in_list}")
+
+                                    # 모달창 열기 및 정보 가져오는 기능 주석 처리 (테스트를 위해)
+                                    # modal_trigger_selector = "td:nth-child(3) > a"  # 3번째 td 안의 a
+                                    # modal_trigger = row.find_element(By.CSS_SELECTOR, modal_trigger_selector)
+
+                                    # driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", modal_trigger)
+                                    # time.sleep(0.5)
+                                    # driver.execute_script("arguments[0].click();", modal_trigger)
+                                    # print(f"'{product_name_in_list}' 상품의 모달창 열기 시도...")
+
+                                    # modal_selector = "div#pop_official_06"
+                                    # WebDriverWait(driver, 20).until(
+                                    #     EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
+                                    # )
+                                    # print("모달창 로드 완료.")
+                                    # time.sleep(1)
+
+                                    # modal_element = driver.find_element(By.CSS_SELECTOR, modal_selector)
+                                    # modal_table_all_rows = modal_element.find_elements(By.CSS_SELECTOR, "div.tableType05 > table  tr")
+
+                                    # sales_period = "N/A"
+                                    # summary_link = "N/A"
+                                    # terms_link = "N/A"
+                                    # business_manual_link = "N/A"
+
+                                    # current_modal_product_name = "N/A"
+
+                                    # data_rows_in_modal = []
+                                    # for r_idx, m_row in enumerate(modal_table_all_rows):
+                                    #     m_th_cells = m_row.find_elements(By.TAG_NAME, "th")
+                                    #     m_td_cells = m_row.find_elements(By.TAG_NAME, "td")
+                                    #     if m_th_cells and m_th_cells[0].text.strip() == "상품명":
+                                    #         continue
+                                    #     if m_td_cells:
+                                    #         data_rows_in_modal.append(m_td_cells)
+
+                                    # if not data_rows_in_modal:
+                                    #     print("모달 내에서 데이터 행을 찾지 못했습니다.")
+                                    # else:
+                                    #     first_data_row_cells = data_rows_in_modal[0]
+                                    #     if first_data_row_cells and first_data_row_cells[0].get_attribute("rowspan"):
+                                    #         current_modal_product_name = first_data_row_cells[0].text.strip()
+                                    #     else:
+                                    #         current_modal_product_name = first_data_row_cells[0].text.strip()
+
+                                    #     for m_td_cells in data_rows_in_modal:
+                                    #         if m_td_cells[0].get_attribute("rowspan"):
+                                    #             current_modal_product_name = m_td_cells[0].text.strip()
+                                    #             sales_period_idx = 1
+                                    #             summary_idx = 2
+                                    #             bm_idx = 3
+                                    #             terms_idx = 4
+                                    #         else:
+                                    #             sales_period_idx = 0
+                                    #             summary_idx = 1
+                                    #             bm_idx = 2
+                                    #             terms_idx = 3
+
+                                    #         if len(m_td_cells) >= 5:
+                                    #             sales_period = m_td_cells[sales_period_idx].text.strip()
+                                    #             summary_links_modal = m_td_cells[summary_idx].find_elements(By.TAG_NAME, "a")
+                                    #             summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
+                                    #             bm_links_modal = m_td_cells[bm_idx].find_elements(By.TAG_NAME, "a")
+                                    #             business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                    #             terms_links_modal = m_td_cells[terms_idx].find_elements(By.TAG_NAME, "a")
+                                    #             terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    #         elif len(m_td_cells) == 4:
+                                    #             sales_period = m_td_cells[sales_period_idx].text.strip()
+                                    #             summary_link = "N/A"
+                                    #             bm_links_modal = m_td_cells[bm_idx - 1].find_elements(By.TAG_NAME, "a")
+                                    #             business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                    #             terms_links_modal = m_td_cells[terms_idx - 1].find_elements(By.TAG_NAME, "a")
+                                    #             terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    #         else:
+                                    #             print(f"모달 내 데이터 행의 td 개수가 예상과 다릅니다: {len(m_td_cells)}개. 건너뜁니다.")
+                                    #             continue
+
+                                    #         products_data.append({
+                                    #             "product_name": current_modal_product_name,
+                                    #             "sales_period": sales_period,
+                                    #             "summary_link": summary_link,
+                                    #             "terms_link": terms_link,
+                                    #             "business_manual_link": business_manual_link,
+                                    #             "tab_type": tab_text,
+                                    #             "page": page_num # 현재 페이지 번호 사용
+                                    #         })
+
+                                    #         print(f"  판매기간: {sales_period}")
+                                    #         print(f"  상품요약서: {summary_link}")
+                                    #         print(f"  사업방법서: {business_manual_link}")
+                                    #         print(f"  약관: {terms_link}")
+
+                                    # try:
+                                    #     close_button = WebDriverWait(driver, 5).until(
+                                    #         EC.element_to_be_clickable((By.CSS_SELECTOR, "button#closeBtn"))
+                                    #     )
+                                    #     driver.execute_script("arguments[0].click();", close_button)
+                                    #     print("모달 닫기 버튼 클릭.")
+                                    #     WebDriverWait(driver, 10).until_not(
+                                    #         EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
+                                    #     )
+                                    #     print("모달 닫힘 확인.")
+                                    #     time.sleep(1)
+                                    # except Exception as e_modal_close:
+                                    #     print(f"모달 닫기 중 오류: {e_modal_close}")
+
+                                    # except TimeoutException:
+                                    #     print(f"'{product_name_in_list}' 상품의 모달창을 열거나 내용을 찾는 데 시간 초과.")
+                                    # except NoSuchElementException:
+                                    #     print(f"'{product_name_in_list}' 상품의 모달창 열기 버튼 또는 내부 요소를 찾을 수 없음.")
+                                    # except Exception as e_modal:
+                                    #     print(f"'{product_name_in_list}' 상품 모달 처리 중 오류: {e_modal}")
+
+                                except NoSuchElementException:
+                                    print(f"    상품명 요소를 찾을 수 없습니다. (행 {row_idx + 1})")
+                                    continue
+                                except Exception as e_row:
+                                    print(f"    상품 행 처리 중 오류: {e_row} (행 {row_idx + 1})")
+                                    traceback.print_exc()
+                                    continue
+
+                                # 모달 기능 주석 처리 후 products_data에 기본 정보 추가
+                                products_data.append({
+                                    "product_name": product_name_in_list,
+                                    "tab_type": tab_text,
+                                    "page": page_num
+                                })
+
+                        except TimeoutException:
+                            print("  상품 목록을 찾는 데 시간 초과.")
+                        except Exception as e_product_list:
+                            print(f"  상품 목록 스크래핑 중 오류: {e_product_list}")
+                            traceback.print_exc()
+
+                    else:  # 페이지 번호 링크 클릭
+                        print(f"  페이지 {page_num} 클릭 시도...")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", page_element)
+                        time.sleep(0.5)
+
+                        # 클릭 가능할 때까지 기다림
+                        WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, f"//div[@class='pageArea type02']//a[span[text()='{page_num}']]"))
+                        )
+                        # StaleElementReferenceException 방지를 위해 클릭 직전에 다시 찾음
+                        page_element_to_click = driver.find_element(By.XPATH, f"//div[@class='pageArea type02']//a[span[text()='{page_num}']]")
+
+                        driver.execute_script("arguments[0].click();", page_element_to_click)
+                        print(f"  페이지 {page_num} 클릭 완료. 페이지 로딩 대기...")
+
+                        # 페이지 로딩 대기 (상품 목록이 새로 로드될 때까지)
+                        try:
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_all_elements_located((By.CSS_SELECTOR, product_rows_selector))
+                            )
+                            print(f"  페이지 {page_num}의 상품 목록 로드 확인.")
+                        except TimeoutException:
+                            print(f"  페이지 {page_num}의 상품 목록을 찾는 데 시간 초과. 다음 페이지로 이동합니다.")
+                            continue
+                        time.sleep(2)  # 추가 대기
+
+                        # 현재 페이지의 상품 목록 스크래핑 (모달창 활성화)
+                        product_rows_selector = "div.tableBasicList > table > tbody > tr"
+                        try:
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_all_elements_located((By.CSS_SELECTOR, product_rows_selector))
+                            )
+                            product_elements = driver.find_elements(By.CSS_SELECTOR, product_rows_selector)
+                            if not product_elements:
+                                print("  현재 페이지에 상품이 없습니다.")
+                            else:
+                                print(f"  현재 페이지에서 {len(product_elements)}개의 상품 발견.")
+
+                            for row_idx, row in enumerate(product_elements):
+                                try:
+                                    product_name_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(2)")  # a 태그 제거
+                                    product_name_in_list = product_name_element.text.strip()
+                                    print(f"    상품명 (목록): {product_name_in_list}")
+
+                                    # 모달창 열기 및 정보 가져오는 기능 활성화
+                                    modal_trigger_selector = "td:nth-child(3) > a"  # 3번째 td 안의 a
+                                    modal_trigger = row.find_element(By.CSS_SELECTOR, modal_trigger_selector)
+
+                                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", modal_trigger)
+                                    time.sleep(0.5)
+                                    driver.execute_script("arguments[0].click();", modal_trigger)
+                                    print(f"'{product_name_in_list}' 상품의 모달창 열기 시도...")
+
+                                    modal_selector = "div#pop_official_06"
+                                    WebDriverWait(driver, 20).until(
+                                        EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
+                                    )
+                                    print("모달창 로드 완료.")
+                                    time.sleep(1)
+
+                                    modal_element = driver.find_element(By.CSS_SELECTOR, modal_selector)
+                                    modal_table_all_rows = modal_element.find_elements(By.CSS_SELECTOR, "div.tableType05 > table  tr")
+
+                                    sales_period = "N/A"
+                                    summary_link = "N/A"
+                                    terms_link = "N/A"
+                                    business_manual_link = "N/A"  # 초기화 추가
+
+                                    current_modal_product_name = "N/A"
+
+                                    data_rows_in_modal = []
+                                    for r_idx, m_row in enumerate(modal_table_all_rows):
+                                        m_th_cells = m_row.find_elements(By.TAG_NAME, "th")
+                                        m_td_cells = m_row.find_elements(By.TAG_NAME, "td")
+                                        if m_th_cells and m_th_cells[0].text.strip() == "상품명":
+                                            continue
+                                        if m_td_cells:
+                                            data_rows_in_modal.append(m_td_cells)
+
+                                    if not data_rows_in_modal:
+                                        print("모달 내에서 데이터 행을 찾지 못했습니다.")
+                                    else:
+                                        first_data_row_cells = data_rows_in_modal[0]
+                                        if first_data_row_cells and first_data_row_cells[0].get_attribute("rowspan"):
+                                            current_modal_product_name = first_data_row_cells[0].text.strip()
+                                        else:
+                                            current_modal_product_name = first_data_row_cells[0].text.strip()
+
+                                        for m_td_cells in data_rows_in_modal:
+                                            if m_td_cells[0].get_attribute("rowspan"):
+                                                current_modal_product_name = m_td_cells[0].text.strip()
+                                                sales_period_idx = 1
+                                                summary_idx = 2
+                                                bm_idx = 3
+                                                terms_idx = 4
+                                            else:
+                                                sales_period_idx = 0
+                                                summary_idx = 1
+                                                bm_idx = 2
+                                                terms_idx = 3
+
+                                            if len(m_td_cells) >= 5:
+                                                sales_period = m_td_cells[sales_period_idx].text.strip()
+                                                summary_links_modal = m_td_cells[summary_idx].find_elements(By.TAG_NAME, "a")
+                                                summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
+                                                bm_links_modal = m_td_cells[bm_idx].find_elements(By.TAG_NAME, "a")
+                                                business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                                terms_links_modal = m_td_cells[terms_idx].find_elements(By.TAG_NAME, "a")
+                                                terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                            elif len(m_td_cells) == 4:
+                                                sales_period = m_td_cells[sales_period_idx].text.strip()
+                                                summary_link = "N/A"
+                                                bm_links_modal = m_td_cells[bm_idx - 1].find_elements(By.TAG_NAME, "a")
+                                                business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                                terms_links_modal = m_td_cells[terms_idx - 1].find_elements(By.TAG_NAME, "a")
+                                                terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                            else:
+                                                print(f"모달 내 데이터 행의 td 개수가 예상과 다릅니다: {len(m_td_cells)}개. 건너뜁니다.")
+                                                continue
+
+                                            products_data.append({
+                                                "product_name": current_modal_product_name,
+                                                "sales_period": sales_period,
+                                                "summary_link": summary_link,
+                                                "terms_link": terms_link,
+                                                "business_manual_link": business_manual_link,
+                                                "tab_type": tab_text,
+                                                "page": page_num  # 현재 페이지 번호 사용
+                                            })
+
+                                            print(f"  판매기간: {sales_period}")
+                                            print(f"  상품요약서: {summary_link}")
+                                            print(f"  사업방법서: {business_manual_link}")
+                                            print(f"  약관: {terms_link}")
+
+                                    try:
+                                        close_button = WebDriverWait(driver, 5).until(
+                                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button#closeBtn"))
+                                        )
+                                        driver.execute_script("arguments[0].click();", close_button)
+                                        print("모달 닫기 버튼 클릭.")
+                                        WebDriverWait(driver, 10).until_not(
+                                            EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
+                                        )
+                                        print("모달 닫힘 확인.")
+                                        time.sleep(1)
+                                    except Exception as e_modal_close:
+                                        print(f"모달 닫기 중 오류: {e_modal_close}")
+
+                                except TimeoutException:
+                                    print(f"'{product_name_in_list}' 상품의 모달창을 열거나 내용을 찾는 데 시간 초과.")
+                                except NoSuchElementException:
+                                    print(f"'{product_name_in_list}' 상품의 모달창 열기 버튼 또는 내부 요소를 찾을 수 없음.")
+                                except Exception as e_modal:
+                                    print(f"'{product_name_in_list}' 상품 모달 처리 중 오류: {e_modal}")
+
+                                except NoSuchElementException:
+                                    print(f"    상품명 요소를 찾을 수 없습니다. (행 {row_idx + 1})")
+                                    continue
+                                except Exception as e_row:
+                                    print(f"    상품 행 처리 중 오류: {e_row} (행 {row_idx + 1})")
+                                    traceback.print_exc()
+                                    continue
+
+                        except TimeoutException:
+                            print("  상품 목록을 찾는 데 시간 초과.")
+                        except Exception as e_product_list:
+                            print(f"  상품 목록 스크래핑 중 오류: {e_product_list}")
+                            traceback.print_exc()
+
+                    # 현재 페이지 묶음의 마지막 페이지에 도달했을 때만 다음 버튼 클릭
+                    if i == len(page_info_list) - 1:
+                        next_button = None
+                        try:
+                            pagination_container = driver.find_element(By.CSS_SELECTOR, pagination_container_selector)
+                            next_button = pagination_container.find_element(By.CSS_SELECTOR, next_button_selector)
+                        except NoSuchElementException:
+                            print("  페이지네이션 컨테이너 또는 다음 버튼을 찾을 수 없습니다. 페이지네이션 종료.")
+                            break  # 다음 버튼이 없으면 페이지네이션 종료
+
+                        is_next_button_disabled = next_button.get_attribute("href") == "#"
+
+                        if is_next_button_disabled:
+                            print("  다음 페이지 버튼이 비활성화되었습니다. 페이지네이션 종료.")
+                            break  # 다음 버튼이 비활성화되면 페이지네이션 종료
+
+                        # 다음 페이지 묶음으로 이동
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                        time.sleep(0.5)
+                        WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, next_button_selector))
+                        )
+                        next_button = driver.find_element(By.CSS_SELECTOR, next_button_selector)  # StaleElementReferenceException 방지
+                        driver.execute_script("arguments[0].click();", next_button)
+                        print("  다음 페이지 묶음 버튼 클릭. 페이지 로딩 대기...")
+
+                        # 다음 페이지 묶음 로딩 대기 (현재 활성화된 페이지 번호가 변경될 때까지)
+                        # 이전 페이지 묶음의 첫 번째 페이지 번호 (page_info_list[0]["num"])를 기준으로
+                        # 새로운 페이지 묶음의 첫 번째 페이지 번호가 더 커졌는지 확인
+                        try:
+                            # 현재 활성화된 페이지 번호 요소를 다시 찾음
+                            current_active_page_element = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, "div.pageArea.type02 > strong.num > span"))
+                            )
+                            WebDriverWait(driver, 10).until(
+                                lambda d: int(d.find_element(By.CSS_SELECTOR, "div.pageArea.type02 > strong.num > span").text.strip()
+                                              ) > page_info_list[0]["num"]
+                            )
+                            print("  새로운 페이지 묶음 로드 확인.")
+                        except TimeoutException:
+                            print("  새로운 페이지 묶음을 찾는 데 시간 초과. 페이지네이션 종료.")
+                            break
+                        time.sleep(2)  # 추가 대기
+            print(f"--- 보험 유형: {tab_text} 스크래핑 완료 ---")
 
     except Exception as e_main:
         print(f"스크래핑 중 주요 오류 발생: {e_main}")
