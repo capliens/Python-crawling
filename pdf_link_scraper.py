@@ -172,6 +172,52 @@ class PdfLinkExtractor:
             print(f"PDF 링크 추출 중 오류: {e}")
             return None
 
+    def click_and_get_download_link(self, pdf_trigger_element_xpath):
+        """
+        지정된 XPath의 요소를 클릭하고, 다운로드된 PDF 파일의 로컬 경로를 반환합니다.
+        다운로드 디렉토리가 설정되어 있어야 로컬 파일 감지가 작동합니다.
+        """
+        print(f"클릭 후 다운로드 링크/경로 가져오기 시작 - XPath: {pdf_trigger_element_xpath}")
+
+        if not self.download_dir or not os.path.isdir(self.download_dir):
+            print(f"  [Download Link] 다운로드 디렉토리가 설정되지 않았거나 유효하지 않습니다: {self.download_dir}")
+            return None
+
+        files_before_click = set(os.listdir(self.download_dir))
+
+        try:
+            trigger_element = WebDriverWait(self.driver, self.element_wait_timeout).until(
+                EC.element_to_be_clickable((By.XPATH, pdf_trigger_element_xpath))
+            )
+            self.driver.execute_script("arguments[0].click();", trigger_element)
+            print(f"  [Download Link] 요소 클릭 완료: {pdf_trigger_element_xpath}")
+        except TimeoutException:
+            print(f"  [Download Link] 요소 찾기/클릭 실패 (Timeout: {self.element_wait_timeout}s): {pdf_trigger_element_xpath}")
+            return None
+        except Exception as e_click:
+            print(f"  [Download Link] 요소 클릭 중 오류: {e_click} (XPath: {pdf_trigger_element_xpath})")
+            return None
+
+        # 다운로드 완료를 기다립니다.
+        start_time = time.time()
+        download_check_timeout = 60  # 다운로드 대기 시간 (초)
+        check_interval = 1  # 파일 존재 여부 확인 간격 (초)
+
+        while time.time() - start_time < download_check_timeout:
+            current_files = set(os.listdir(self.download_dir))
+            new_files = current_files - files_before_click
+
+            for f in new_files:
+                file_path = os.path.join(self.download_dir, f)
+                # PDF 파일이고, 다운로드가 완료된 것으로 보이는지 확인 (예: .crdownload 확장자가 없는지)
+                if f.lower().endswith(".pdf") and not f.endswith(".crdownload"):
+                    print(f"  [Download Link] 로컬 다운로드 감지 성공: {file_path}")
+                    return file_path
+            time.sleep(check_interval)
+
+        print(f"  [Download Link] 지정된 시간 내에 PDF 다운로드를 감지하지 못했습니다. (Timeout: {download_check_timeout}s)")
+        return None
+
 
 if __name__ == "__main__":
     # from seleniumwire import webdriver

@@ -1,5 +1,5 @@
-# 한화 생명 /db 확인
-from selenium import webdriver
+# 한화 생명 /db 확인/wrie 사용시 오류
+from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
