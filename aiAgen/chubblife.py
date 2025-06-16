@@ -174,51 +174,89 @@ def get_chubblife_product_info():
                         for r_idx, m_row in enumerate(modal_table_all_rows):
                             m_th_cells = m_row.find_elements(By.TAG_NAME, "th")
                             m_td_cells = m_row.find_elements(By.TAG_NAME, "td")
+
+                            # 헤더 행 스킵 (상품명 컬럼이 th에 있을 경우)
                             if m_th_cells and m_th_cells[0].text.strip() == "상품명":
                                 continue
+
                             if m_td_cells:
                                 data_rows_in_modal.append(m_td_cells)
 
                         if not data_rows_in_modal:
                             print("모달 내에서 데이터 행을 찾지 못했습니다.")
                         else:
-                            first_data_row_cells = data_rows_in_modal[0]
-                            if first_data_row_cells and first_data_row_cells[0].get_attribute("rowspan"):
-                                current_modal_product_name = first_data_row_cells[0].text.strip()
-                            else:
-                                current_modal_product_name = first_data_row_cells[0].text.strip()
+                            current_modal_product_name = "N/A"  # 상품명 초기화
 
                             for m_td_cells in data_rows_in_modal:
+                                # 각 행의 td 개수를 확인하여 인덱스 조정
+                                num_td_cells = len(m_td_cells)
+
+                                sales_period = "N/A"
+                                summary_link = "N/A"
+                                business_manual_link = "N/A"
+                                terms_link = "N/A"
+
+                                # case 1: 상품명(rowspan) + 판매기간 + 상품요약서 + 사업방법서 + 상품약관 (총 5개 TD)
+                                # case 2: 상품명(rowspan) + 판매기간 + 사업방법서 + 상품약관 (총 4개 TD)
+                                # case 3: 판매기간 + 상품요약서 + 사업방법서 + 상품약관 (총 4개 TD, 상품명은 상위 rowspan)
+                                # case 4: 판매기간 + 사업방법서 + 상품약관 (총 3개 TD, 상품명은 상위 rowspan, 상품요약서 없음)
+
+                                # 상품명 셀이 rowspan을 가지고 있는지 확인 (새로운 상품 시작)
+                                is_new_product_row = False
                                 if m_td_cells[0].get_attribute("rowspan"):
                                     current_modal_product_name = m_td_cells[0].text.strip()
-                                    sales_period_idx = 1
-                                    summary_idx = 2
-                                    bm_idx = 3
-                                    terms_idx = 4
-                                else:
-                                    sales_period_idx = 0
-                                    summary_idx = 1
-                                    bm_idx = 2
-                                    terms_idx = 3
+                                    is_new_product_row = True
 
-                                if len(m_td_cells) >= 5:
-                                    sales_period = m_td_cells[sales_period_idx].text.strip()
-                                    summary_links_modal = m_td_cells[summary_idx].find_elements(By.TAG_NAME, "a")
-                                    summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
-                                    bm_links_modal = m_td_cells[bm_idx].find_elements(By.TAG_NAME, "a")
-                                    business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
-                                    terms_links_modal = m_td_cells[terms_idx].find_elements(By.TAG_NAME, "a")
-                                    terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
-                                elif len(m_td_cells) == 4:
-                                    sales_period = m_td_cells[sales_period_idx].text.strip()
-                                    summary_link = "N/A"
-                                    bm_links_modal = m_td_cells[bm_idx - 1].find_elements(By.TAG_NAME, "a")
-                                    business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
-                                    terms_links_modal = m_td_cells[terms_idx - 1].find_elements(By.TAG_NAME, "a")
-                                    terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                if is_new_product_row:
+                                    # 새로운 상품명이 시작되는 행
+                                    if num_td_cells == 5:  # 상품명(rowspan) + 판매기간 + 상품요약서 + 사업방법서 + 상품약관
+                                        sales_period = m_td_cells[1].text.strip()
+                                        # 상품요약서 링크 처리 (공백일 수도 있음)
+                                        summary_links_modal = m_td_cells[2].find_elements(By.TAG_NAME, "a")
+                                        summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
+                                        # 사업방법서 링크 처리
+                                        bm_links_modal = m_td_cells[3].find_elements(By.TAG_NAME, "a")
+                                        business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                        # 상품약관 링크 처리
+                                        terms_links_modal = m_td_cells[4].find_elements(By.TAG_NAME, "a")
+                                        terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    elif num_td_cells == 4:  # 상품명(rowspan) + 판매기간 + 사업방법서 + 상품약관 (상품요약서 컬럼 없음)
+                                        sales_period = m_td_cells[1].text.strip()
+                                        summary_link = "N/A"  # 상품요약서 컬럼 자체가 없으므로 N/A
+                                        # 사업방법서 링크 처리
+                                        bm_links_modal = m_td_cells[2].find_elements(By.TAG_NAME, "a")
+                                        business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                        # 상품약관 링크 처리
+                                        terms_links_modal = m_td_cells[3].find_elements(By.TAG_NAME, "a")
+                                        terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    else:
+                                        print(f"새로운 상품 행의 td 개수가 예상과 다릅니다: {num_td_cells}개. 건너뜁니다.")
+                                        continue
                                 else:
-                                    print(f"모달 내 데이터 행의 td 개수가 예상과 다릅니다: {len(m_td_cells)}개. 건너뜁니다.")
-                                    continue
+                                    # 기존 상품의 하위 행 (상품명이 없는 행)
+                                    if num_td_cells == 4:  # 판매기간 + 상품요약서 + 사업방법서 + 상품약관
+                                        sales_period = m_td_cells[0].text.strip()
+                                        # 상품요약서 링크 처리 (공백일 수도 있음)
+                                        summary_links_modal = m_td_cells[1].find_elements(By.TAG_NAME, "a")
+                                        summary_link = summary_links_modal[0].get_attribute('href') if summary_links_modal else "N/A"
+                                        # 사업방법서 링크 처리
+                                        bm_links_modal = m_td_cells[2].find_elements(By.TAG_NAME, "a")
+                                        business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                        # 상품약관 링크 처리
+                                        terms_links_modal = m_td_cells[3].find_elements(By.TAG_NAME, "a")
+                                        terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    elif num_td_cells == 3:  # 판매기간 + 사업방법서 + 상품약관 (상품요약서 컬럼 없음)
+                                        sales_period = m_td_cells[0].text.strip()
+                                        summary_link = "N/A"  # 상품요약서 컬럼 자체가 없으므로 N/A
+                                        # 사업방법서 링크 처리
+                                        bm_links_modal = m_td_cells[1].find_elements(By.TAG_NAME, "a")
+                                        business_manual_link = bm_links_modal[0].get_attribute('href') if bm_links_modal else "N/A"
+                                        # 상품약관 링크 처리
+                                        terms_links_modal = m_td_cells[2].find_elements(By.TAG_NAME, "a")
+                                        terms_link = terms_links_modal[0].get_attribute('href') if terms_links_modal else "N/A"
+                                    else:
+                                        print(f"하위 데이터 행의 td 개수가 예상과 다릅니다: {num_td_cells}개. 건너뜁니다.")
+                                        continue
 
                                 products_data.append({
                                     "product_name": current_modal_product_name,
