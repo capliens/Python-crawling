@@ -8,6 +8,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
+import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -278,6 +279,42 @@ def scrape_cardif_data():
                     except Exception as inner_e:
                         print(f"모달창 닫기 중 오류 발생: {inner_e}")
                         pass  # 닫기 버튼을 찾을 수 없거나 이미 닫혀 있는 경우
+        # 데이터베이스 저장 로직 추가
+        if DatabaseManager and all_product_data:
+            structured_rows_for_db = []
+            company_name = "BNP파리바 카디프생명"
+            scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            for item in all_product_data:
+                product_name = item.get("상품명", "")
+                sales_period = item.get("판매기간", "")
+                product_code = None  # 현재 스크랩되는 정보에 없으므로 빈 문자열로 처리
+
+                # 각 문서 유형별로 데이터 추가
+                if item.get("상품요약서"):
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "상품요약서", sales_period, scraped_at, item["상품요약서"]
+                    ))
+                if item.get("약관"):
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "약관", sales_period, scraped_at, item["약관"]
+                    ))
+                if item.get("사업방법서"):
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "사업방법서", sales_period, scraped_at, item["사업방법서"]
+                    ))
+
+            if structured_rows_for_db:
+                with DatabaseManager() as db_manager:
+                    db_manager.save_data(structured_rows_for_db)
+            else:
+                print("데이터베이스에 저장할 데이터가 없습니다.")
+        else:
+            print("DatabaseManager를 임포트할 수 없거나 저장할 데이터가 없습니다.")
+
         return all_product_data
 
     except Exception as e:
@@ -291,6 +328,7 @@ def scrape_cardif_data():
 if __name__ == "__main__":
     data = scrape_cardif_data()
     if data:
+        print("\n--- 스크랩된 모든 데이터 ---")
         for item in data:
             print(item)
     else:
