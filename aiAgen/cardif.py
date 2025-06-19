@@ -1,4 +1,4 @@
-# 카디프생명/db확인/왜 가로채기가 되는거지?
+# 카디프생명/db확인/판매중지페이지/왜 가로채기가 되는거지?
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
