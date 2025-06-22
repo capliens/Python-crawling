@@ -1,4 +1,4 @@
-# 카디프생명/db확인/판매중지페이지/왜 가로채기가 되는거지?
+# 카디프생명/판매중지페이지/왜 가로채기가 되는거지?(일부는 href 주소를 가져옴)
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -8,7 +8,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
-import datetime
+from datetime import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:

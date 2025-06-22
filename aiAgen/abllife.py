@@ -1,11 +1,22 @@
-# abl생명/db 확인/판매중지페이지
+# abl생명/판매중지페이지
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
-from neoali.DB_save import DatabaseManager
+import os  # sys.path 수정을 위해 추가
+import sys
 from datetime import datetime
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 
 def scrape_abllife():
@@ -143,7 +154,7 @@ def scrape_abllife():
     for product_item in products_data:
         product_name = product_item.get("상품명", "N/A")
         sales_period = product_item.get("판매기간", "N/A")
-        product_code = "N/A"  # 현재 스크래핑 데이터에 없으므로 N/A로 설정
+        product_code = None  # 현재 스크래핑 데이터에 없으므로 N/A로 설정
 
         if product_item.get("약관"):
             structured_rows.append([

@@ -1,4 +1,4 @@
-# 처브라이프/db확인/판매중단페이지/약관링크(개선필요)
+# 처브라이프/판매중단페이지/약관링크(개선필요)/사업방법서 없는거 제외
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -333,7 +333,7 @@ def get_chubblife_product_info():
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
-                                        "N/A",  # product_code
+                                        None,  # product_code
                                         "상품요약서",
                                         sales_period,
                                         scraped_at,
@@ -344,7 +344,7 @@ def get_chubblife_product_info():
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
-                                        "N/A",  # product_code
+                                        None,  # product_code
                                         "사업방법서",
                                         sales_period,
                                         scraped_at,
@@ -355,7 +355,7 @@ def get_chubblife_product_info():
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
-                                        "N/A",  # product_code
+                                        None,  # product_code
                                         "약관",
                                         sales_period,
                                         scraped_at,

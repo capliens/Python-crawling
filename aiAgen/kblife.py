@@ -1,4 +1,4 @@
-# KB라이프/판매중단페이지/pdf는 그냥 통합시킴/db 확인
+# KB라이프/판매중단페이지/pdf는 그냥 통합시킴/db 폴더위치 
 from webdriver_manager.chrome import ChromeDriverManager
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -12,8 +12,17 @@ import time
 import re
 import requests
 import logging
-from datetime import datetime  # datetime 모듈에서 datetime 클래스 임포트
-from neoali.DB_save import DatabaseManager  # DatabaseManager 임포트
+import sys
+from datetime import datetime  # datetime 모듈에서 datetime 클래스 임포트 
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
 
 # 로깅 설정: INFO 레벨 이상만 출력 (DEBUG는 기본적으로 출력 안 됨)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -124,7 +133,7 @@ def _convert_to_db_format(product_data, company_name="KB라이프"):
 
     product_name = product_data.get("상품명", "알 수 없음")
     # product_code는 KB라이프 스크래퍼에서 직접 추출되지 않으므로, 임시로 'N/A' 또는 다른 규칙 적용
-    product_code = "N/A"
+    product_code = None
 
     # 현재 버전 문서 처리
     current_docs = product_data.get("현재 버전 문서 링크 정보", {})

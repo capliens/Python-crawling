@@ -1,4 +1,4 @@
-# im라이프/판매중단페이지/db확인
+# im라이프/판매중단페이지/db확인/pdf저장 이슈,db저장위치 이슈 db 저장안됨
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options

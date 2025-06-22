@@ -1,4 +1,4 @@
-# 매트라이프 /db 확인 /판매중단패이지
+# 매트라이프 /db 확인 /판매중단패이지/db저장 이슈
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
