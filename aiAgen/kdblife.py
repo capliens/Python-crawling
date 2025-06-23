@@ -1,5 +1,4 @@
-# kdb생명  href 값만 가져오기
-import json
+# kdb생명/판매중단 페이지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, ElementClickInterceptedException
 from selenium.webdriver.chrome.options import Options
@@ -11,6 +10,19 @@ from seleniumwire import webdriver  # seleniumwire 사용 시
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import re
+import os
+import sys
+from datetime import datetime
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 
 def setup_driver():
@@ -66,8 +78,8 @@ def handle_ie_compatibility_popup(driver):
         print("팝업창 또는 '확인창 닫기' 버튼을 시간 내에 찾지 못했거나, 팝업이 나타나지 않았습니다. (팝업이 나타나지 않았거나 다른 형태일 수 있음)")
     except NoSuchElementException:
         print("지정된 XPath의 팝업 닫기 버튼을 찾을 수 없습니다. (HTML 구조가 변경되었을 수 있음)")
-    except Exception as e:
-        print(f"팝업 처리 중 예상치 못한 오류 발생: {e}")
+    except Exception as err:
+        print(f"팝업 처리 중 예상치 못한 오류 발생: {err}")
 
 
 def extract_table_data(driver, panel_id):
@@ -579,14 +591,61 @@ def crawl_page(driver, url):
         tabs_to_exclude = ["퇴직연금"]
         extracted_data = click_selected_insurance_tabs(driver, tabs_to_exclude)
 
+        # DB에 저장
+        structured_rows = []
+        scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for tab_name, data_rows in extracted_data.items():
+            for row in data_rows:
+                # 약관 저장 (기존 로직)
+                if row.get("약관"):
+                    link_yakgwan = row.get("약관", "")
+                    if link_yakgwan and not link_yakgwan.lower().endswith('.html'):
+                        structured_rows.append([
+                            "KDB생명",  # company_name
+                            row["상품명"],  # product_name
+                            None,  # product_code
+                            "약관",  # document_type
+                            row["판매기간"],  # sales_period
+                            scraped_time,
+                            row["약관"]  # link
+                        ])
+
+                # 사업방법서 저장 (추가할 부분)
+                if row.get("사업방법서"):  # 사업방법서 링크가 존재할 경우에만 추가
+                    structured_rows.append([
+                        "KDB생명",  # company_name
+                        row["상품명"],  # product_name
+                        None,  # product_code
+                        "사업방법서",  # document_type (사업방법서로 명시)
+                        row["판매기간"],  # sales_period
+                        scraped_time,
+                        row["사업방법서"]  # link (사업방법서 링크 사용)
+                    ])
+
+                # 상품요약서 저장 (추가할 부분)
+                if row.get("상품요약서"):  # 상품요약서 링크가 존재할 경우에만 추가
+                    structured_rows.append([
+                        "KDB생명",  # company_name
+                        row["상품명"],  # product_name
+                        None,  # product_code
+                        "상품요약서",  # document_type (상품요약서로 명시)
+                        row["판매기간"],  # sales_period
+                        scraped_time,
+                        row["상품요약서"]  # link (상품요약서 링크 사용)
+                    ])
+
+        with DatabaseManager() as db_manager:
+            saved_count = db_manager.save_data(structured_rows)
+            print(f"DB에 {saved_count}건 저장 완료")
+
         print("\n--- 모든 지정된 보험 유형 탭 순환 및 데이터 추출 완료 ---")
         print(f"최종 페이지 제목: {driver.title}")
         print(f"최종 페이지 URL: {driver.current_url}")
 
     except TimeoutException:
         print(f"'{url}' 로딩 중 또는 요소 찾기 중 시간 초과 오류가 발생했습니다. 페이지가 예상대로 로드되지 않았을 수 있습니다.")
-    except Exception as e:
-        print(f"크롤링 중 예상치 못한 오류 발생: {e}")
+    except Exception as err:
+        print(f"크롤링 중 예상치 못한 오류 발생: {err}")
     finally:
         driver.quit()  # 드라이버는 항상 종료되어야 합니다.
 
@@ -599,29 +658,3 @@ if __name__ == "__main__":
 
     driver = setup_driver()
     all_crawled_data = crawl_page(driver, target_url)
-
-    print("\n--- 최종 추출된 모든 데이터 요약 ---")
-    if all_crawled_data:
-        for tab_name, data_rows in all_crawled_data.items():
-            print(f"\n### {tab_name} (총 {len(data_rows)}개 항목)\n")
-            if data_rows:
-                for row in data_rows:
-                    print(f"--- 상품 데이터 ---")
-                    for key, value in row.items():
-                        # 값이 너무 길면 잘라서 출력 (가독성 향상)
-                        display_value = str(value)
-                        if len(display_value) > 100:
-                            display_value = display_value[:100] + "..."
-                        print(f"- {key}: {display_value}")
-                    print("--------------------")
-            else:
-                print(f"  {tab_name}에서 추출된 상품 데이터가 없습니다.")
-
-        try:
-            with open(output_filename, 'w', encoding='utf-8') as f:
-                json.dump(all_crawled_data, f, ensure_ascii=False, indent=4)
-            print(f"\n모든 추출 데이터가 '{output_filename}' 파일에 성공적으로 저장되었습니다.")
-        except IOError as e:
-            print(f"\nJSON 파일 저장 중 오류 발생: {e}")
-    else:
-        print("어떤 탭에서도 추출된 데이터가 없습니다. JSON 파일이 생성되지 않습니다.")
