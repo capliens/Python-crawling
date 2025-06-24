@@ -1,4 +1,4 @@
-# 처브라이프/판매중단페이지/약관링크(개선필요)/사업방법서 없는거 제외
+# 처브라이프/판매중단페이지/약관링크(개선필요)/사업방법서 없는건 안나오게
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
