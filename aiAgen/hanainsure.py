@@ -6,14 +6,29 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import time
+import os
+import sys
+from datetime import datetime
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager
+except ImportError as e:
+    DatabaseManager = None
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 
-def crawl_hanainsure_documents_robust_detailed_output():  # 함수명 변경 (상세 출력 강조)
+def crawl_hanainsure_documents_robust_detailed_output():
     """
     하나손해보험 판매 상품 공시 페이지에서 단계별 클릭을 통해
     각 상품의 약관, 사업방법서, 상품요약서 링크를 크롤링합니다.
     Selenium 3.x 환경 호환, 정확한 CSS 선택자 유지,
     그리고 4단계 정보 추출 시 상세 출력문을 추가하여 진행 상황을 명확히 합니다.
+    링크 내용이 비어있는 경우는 DB에 저장하지 않으며,
+    3가지 문서 중 일부만 존재해도 해당 문서만 저장합니다.
     """
     options = webdriver.ChromeOptions()
     # options.add_argument("--headless") # 백그라운드 실행 시 주석 해제
@@ -105,13 +120,13 @@ def crawl_hanainsure_documents_robust_detailed_output():  # 함수명 변경 (�
                         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#divStep03 > div"))
                     )
 
-                    for l in range(len(step03_divs)):
+                    for sale_idx in range(len(step03_divs)):
                         current_sale_period_text = ""
                         try:
                             current_step03_divs = WebDriverWait(driver, 10).until(
                                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#divStep03 > div"))
                             )
-                            sale_period_link = current_step03_divs[l].find_element(By.TAG_NAME, "a")
+                            sale_period_link = current_step03_divs[sale_idx].find_element(By.TAG_NAME, "a")
                             current_sale_period_text = sale_period_link.text
 
                             print(f"      [STEP 3] 클릭: {current_sale_period_text}")
@@ -146,9 +161,9 @@ def crawl_hanainsure_documents_robust_detailed_output():  # 함수명 변경 (�
                             displayed_sale_period = "추출 실패"
                             try:
                                 displayed_product_name = driver.find_element(By.CSS_SELECTOR, "#divStep04 dl:nth-of-type(1) dd.p_name").text
-                                print(f"          - 상품명 추출 성공: '{displayed_product_name}'")
+                                print(f"            - 상품명 추출 성공: '{displayed_product_name}'")
                                 displayed_sale_period = driver.find_element(By.CSS_SELECTOR, "#divStep04 dl:nth-of-type(2) dd.p_name").text
-                                print(f"          - 판매기간 추출 성공: '{displayed_sale_period}'")
+                                print(f"            - 판매기간 추출 성공: '{displayed_sale_period}'")
                             except Exception as inner_e:
                                 print(f"        [오류] 상품명/판매기간 텍스트 추출 중 오류 발생: {inner_e}")
                                 time.sleep(1)  # 오류 시 잠시 대기 후 재시도
@@ -168,27 +183,32 @@ def crawl_hanainsure_documents_robust_detailed_output():  # 함수명 변경 (�
                             link_elements = driver.find_elements(By.CSS_SELECTOR, "#divStep04 .btn_group a.btn")
 
                             if not link_elements:
-                                print("          - 경고: 문서 링크를 찾을 수 없습니다.")
+                                print("          - 경고: 문서 링크를 찾을 수 없습니다. 해당 상품에 대한 문서가 없습니다.")
 
                             for idx, link_elem in enumerate(link_elements):
                                 link_type = link_elem.text.strip()
                                 link_href = link_elem.get_attribute("href")
 
-                                extracted_item = {
-                                    "보험상품 유형": ins_type_text,
-                                    "상세 보험상품 유형": dtl_type_text,
-                                    "상품명": displayed_product_name,
-                                    "판매기간": displayed_sale_period,
-                                    "문서타입": link_type,
-                                    "링크": link_href
-                                }
-                                all_extracted_data.append(extracted_item)
-                                print(f"            [링크 추출 {idx + 1}] 문서타입: '{link_type}', 링크: '{link_href}'")
+                                # --- 여기서 링크 유효성 검사 및 조건부 저장 ---
+                                # link_href가 None이 아니고, 공백 제거 후 빈 문자열이 아닐 때만 저장
+                                if link_href and link_href.strip() != "":
+                                    extracted_item = {
+                                        "보험상품 유형": ins_type_text,
+                                        "상세 보험상품 유형": dtl_type_text,
+                                        "상품명": displayed_product_name,
+                                        "판매기간": displayed_sale_period,
+                                        "문서타입": link_type,
+                                        "링크": link_href
+                                    }
+                                    all_extracted_data.append(extracted_item)
+                                    print(f"            [링크 추출 {idx + 1}] 문서타입: '{link_type}', 링크: '{link_href}' (저장됨)")
+                                else:
+                                    print(f"            [링크 건너_ {idx + 1}] 문서타입: '{link_type}', 링크: '{link_href}' (유효하지 않아 저장 안 함)")
 
                         except Exception as e:
                             print(f"        [오류] STEP 4 전체 데이터 추출 중 예상치 못한 오류 발생 (판매기간: {current_sale_period_text}): {e}")
-                            # 문제의 HTML 출력은 제거됨
-                            continue  # 다음 판매기간으로 이동하여 크롤링 계속
+                            # 이 오류는 특정 판매기간에 대한 추출 문제이므로 다음 판매기간으로 이동하여 크롤링 계속
+                            continue
 
     except Exception as e:
         print(f"[주요 오류] 크롤링 과정 중 예상치 못한 오류 발생: {e}")
@@ -198,9 +218,37 @@ def crawl_hanainsure_documents_robust_detailed_output():  # 함수명 변경 (�
         print("\n--- 전체 크롤링 완료 ---")
         for data in all_extracted_data:
             print(data)
-        print(f"\n총 {len(all_extracted_data)}개의 문서 정보가 추출되었습니다.")
+        print(f"\n총 {len(all_extracted_data)}개의 유효한 문서 정보가 추출되었습니다.")
+
+        # 추출된 데이터를 DB에 저장
+        if all_extracted_data:
+            if DatabaseManager:  # DatabaseManager가 성공적으로 임포트되었는지 확인
+                structured_for_db = []
+                scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                company_name = "하나손해보험"  # 회사명 고정
+
+                for item in all_extracted_data:
+                    structured_for_db.append([
+                        company_name,
+                        item.get("상품명", "N/A"),
+                        None,  # 상품코드는 null로 저장
+                        item.get("문서타입", "N/A"),
+                        item.get("판매기간", "N/A"),
+                        scraped_time,
+                        item.get("링크", "N/A")
+                    ])
+
+                try:
+                    with DatabaseManager(db_name="hanainsure_web_data.db") as db_manager:
+                        db_manager.save_data(structured_for_db)
+                    print("DB에 데이터가 성공적으로 저장되었습니다.")
+                except Exception as db_e:
+                    print(f"DB 저장 중 오류 발생: {db_e}")
+            else:
+                print("DatabaseManager를 임포트할 수 없어 DB에 저장하지 않습니다.")
+        else:
+            print("DB에 저장할 추출된 유효한 데이터가 없습니다.")
 
 
 if __name__ == "__main__":
-    # 이 함수를 호출하여 실행하세요.
     crawl_hanainsure_documents_robust_detailed_output()
