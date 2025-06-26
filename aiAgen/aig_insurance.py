@@ -1,8 +1,8 @@
-# AIG손해보험
-# https://www.aig.co.kr/downLoadFiles.do?fileId=54042&fileSeq=1
-# &fileType=&fileGb=&viewType=
+# AIG손해보험/판매중지페이지
 import re
-import json  # json 모듈 추가
+import sys
+import os
+from datetime import datetime  # datetime 모듈 추가
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -11,6 +11,16 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 
 def parse_file_download_params(onclick_attr):
@@ -171,23 +181,46 @@ if __name__ == "__main__":
     product_list = get_insurance_product_list()
     if product_list:
         print("보험종류 목록:")
+        structured_rows_for_db = []
+        scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        company_name = "AIG손해보험"  # 회사명 고정
+
         for product in product_list:
-            print(f"보험종류: {product.get('보험종류', 'N/A')}, 상품명: {product.get('상품명', 'N/A')}")
+            product_name = product.get('상품명', 'N/A')
+
             for period_info in product.get("판매기간_정보", []):
-                output_str = f"  판매기간:{period_info.get('판매기간', 'N/A')}"
-                download_links = []
+                sales_period = period_info.get('판매기간', 'N/A')
+                output_str = f"  판매기간:{sales_period}"
+                download_links_output = []
+
                 for doc_type in ["상품요약서", "사업방법서", "약관"]:
-                    if period_info.get(doc_type) and period_info[doc_type].get("link"):
-                        download_links.append(f"{doc_type},{period_info[doc_type]['link']}")
-                if download_links:
-                    output_str += f" {', '.join(download_links)}"
+                    doc_info = period_info.get(doc_type)
+                    if doc_info and doc_info.get("link"):
+                        link = doc_info["link"]
+                        download_links_output.append(f"{doc_type},{link}")
+
+                        # DB 저장용 데이터 추가
+                        structured_rows_for_db.append([
+                            company_name,
+                            product_name,
+                            None,  # product_code는 현재 데이터에 없으므로 N/A
+                            doc_type,
+                            sales_period,
+                            scraped_at,
+                            link
+                        ])
+
+                if download_links_output:
+                    output_str += f" {', '.join(download_links_output)}"
                 print(output_str)
 
-        # JSON 파일로 저장
-        output_filename = "aig_insurance_products.json"
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            json.dump(product_list, f, ensure_ascii=False, indent=4)
-        print(f"\n데이터가 '{output_filename}' 파일에 JSON 형식으로 저장되었습니다.")
+        # DB에 저장
+        if DatabaseManager:
+            db_name = "web_data.db"
+            with DatabaseManager(db_name=db_name) as db_manager:
+                db_manager.save_data(structured_rows_for_db)
+        else:
+            print("DatabaseManager를 사용할 수 없습니다. 데이터를 DB에 저장하지 못했습니다.")
 
     else:
         print("보험종류 목록을 가져오지 못했습니다.")
