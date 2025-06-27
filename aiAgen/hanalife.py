@@ -1,4 +1,4 @@
-# 하나생명/판매중단페이지/db 기능 추기및 확인
+# 하나생명/판매중단페이지/db 확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -7,7 +7,19 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
-import time
+import sys
+import os
+from datetime import datetime  # datetime 모듈 추가
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager
+except ImportError as e:
+    DatabaseManager = None
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 
 def setup_driver():
@@ -30,6 +42,10 @@ def setup_driver():
 def scrape_hanalife_products(url):
     driver = None
     all_product_data = []  # 추출된 모든 상품 딕셔너리를 저장할 리스트
+    db_save_data = []  # DB 저장을 위한 튜플 리스트
+    company_name = "하나생명"  # 회사명 고정
+    scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # 현재 시간
+
     try:
         driver = setup_driver()
         driver.get(url)
@@ -79,11 +95,11 @@ def scrape_hanalife_products(url):
             else:
                 print(f"  행 {i + 1} - 상품명 컬럼을 찾을 수 없거나 비어있습니다.")
 
-            # 문서 다운로드 링크 추출 (상품요약서, 사업방법서, 보험약관)
+            # 문서 다운로드 링크 추출 (상품요약서, 사업방법서, 약관)
             document_cols_map = {
                 "상품요약서": 4,
                 "사업방법서": 5,
-                "보험약관": 6
+                "약관": 6  # "보험약관"을 "약관"으로 변경
             }
 
             for doc_type, col_idx in document_cols_map.items():
@@ -98,6 +114,16 @@ def scrape_hanalife_products(url):
                                 "text": link.text.strip(),
                                 "url": link.get_attribute('href')
                             }
+                            # DB 저장을 위한 데이터 추가
+                            db_save_data.append((
+                                company_name,
+                                product_info.get(headers[2]),  # 상품명
+                                None,  # product_code는 None
+                                doc_type,
+                                product_info.get(headers[3]),  # 판매기간
+                                scraped_at,
+                                link.get_attribute('href')
+                            ))
                         else:
                             product_info[doc_type] = []
                             for link in download_links:
@@ -105,6 +131,16 @@ def scrape_hanalife_products(url):
                                     "text": link.text.strip(),
                                     "url": link.get_attribute('href')
                                 })
+                                # DB 저장을 위한 데이터 추가
+                                db_save_data.append((
+                                    company_name,
+                                    product_info.get(headers[2]),  # 상품명
+                                    None,  # product_code는 None
+                                    doc_type,
+                                    product_info.get(headers[3]),  # 판매기간
+                                    scraped_at,
+                                    link.get_attribute('href')
+                                ))
                     else:
                         product_info[doc_type] = None
 
@@ -118,6 +154,18 @@ def scrape_hanalife_products(url):
             print("데이터가 추출되지 않았습니다. 위 디버그 메시지를 확인하여 문제 원인을 파악하세요.")
         for product in all_product_data:
             print(product)
+
+        # DB 저장 로직 추가
+        if DatabaseManager:
+            db_name = f"{company_name.replace(' ', '')}_web_data.db"
+            with DatabaseManager(db_name=db_name) as db_manager:
+                if db_save_data:
+                    print(f"\n{company_name} 데이터를 DB에 저장 중...")
+                    db_manager.save_data(db_save_data)
+                else:
+                    print(f"\n{company_name} 저장할 DB 데이터가 없습니다.")
+        else:
+            print("DatabaseManager를 임포트할 수 없어 DB 저장을 건너뜁니다.")
 
     except TimeoutException:
         print("페이지 로드 시간이 초과되었거나 첫 번째 상품명 요소를 찾을 수 없습니다. 네트워크 연결 또는 셀렉터를 확인하세요.")
