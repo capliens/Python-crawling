@@ -8,8 +8,25 @@ from selenium.webdriver.chrome.service import Service
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 import time
-import re
-import json
+import os
+import sys
+from datetime import datetime
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.pdf_link_scraper import PdfLinkExtractor
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    PdfLinkExtractor = None
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
+
+DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "mggeneralins")
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
 
 
 def setup_driver():
@@ -23,7 +40,14 @@ def setup_driver():
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--allow-running-insecure-content")
-
+    prefs = {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "plugins.always_open_pdf_externally": True,
+        "profile.default_content_setting_values.automatic_downloads": 1
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
@@ -86,41 +110,83 @@ def extract_level3_data(driver, category_name_step1, category_name_step2, all_ex
                 except NoSuchElementException:
                     sales_period = "판매기간 없음"
 
-                js_pattern = re.compile(r"pdfDownload\('([^']+)',\s*'([^']+)'\)")
-
                 item_downloads = {
                     "상품요약서": None,
                     "약관": None,
                     "사업방법서": None
                 }
 
+                pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR)
+
                 # 상품요약서 링크 처리 (테이블의 2번째 td)
                 try:
-                    summary_link = table.find_element(By.XPATH, ".//tbody/tr/td[2]/a")
-                    link_href = summary_link.get_attribute("href")
-                    match = js_pattern.search(link_href)
-                    if match:
-                        item_downloads["상품요약서"] = {'id': match.group(1), 'type': match.group(2)}
+                    summary_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[2]/a")
+                    xpath_script = """
+                    function getXPath(element) {
+                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
+                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
+                        var ix = 0;
+                        var siblings = element.parentNode.childNodes;
+                        for (var i = 0; i < siblings.length; i++) {
+                            var sibling = siblings[i];
+                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+                        }
+                    }
+                    return getXPath(arguments[0]);
+                    """
+                    summary_link_xpath = driver.execute_script(xpath_script, summary_link_element)
+                    pdf_path = pdf_extractor.click_and_get_download_link(summary_link_xpath)
+                    if pdf_path:
+                        item_downloads["상품요약서"] = pdf_path
                 except NoSuchElementException:
                     pass
 
                 # 약관 링크 처리 (테이블의 3번째 td)
                 try:
-                    terms_link = table.find_element(By.XPATH, ".//tbody/tr/td[3]/a")
-                    link_href = terms_link.get_attribute("href")
-                    match = js_pattern.search(link_href)
-                    if match:
-                        item_downloads["약관"] = {'id': match.group(1), 'type': match.group(2)}
+                    terms_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[3]/a")
+                    xpath_script = """
+                    function getXPath(element) {
+                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
+                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
+                        var ix = 0;
+                        var siblings = element.parentNode.childNodes;
+                        for (var i = 0; i < siblings.length; i++) {
+                            var sibling = siblings[i];
+                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+                        }
+                    }
+                    return getXPath(arguments[0]);
+                    """
+                    terms_link_xpath = driver.execute_script(xpath_script, terms_link_element)
+                    pdf_path = pdf_extractor.click_and_get_download_link(terms_link_xpath)
+                    if pdf_path:
+                        item_downloads["약관"] = pdf_path
                 except NoSuchElementException:
                     pass
 
                 # 사업방법서 링크 처리 (테이블의 4번째 td)
                 try:
-                    biz_link = table.find_element(By.XPATH, ".//tbody/tr/td[4]/a")
-                    link_href = biz_link.get_attribute("href")
-                    match = js_pattern.search(link_href)
-                    if match:
-                        item_downloads["사업방법서"] = {'id': match.group(1), 'type': match.group(2)}
+                    biz_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[4]/a")
+                    xpath_script = """
+                    function getXPath(element) {
+                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
+                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
+                        var ix = 0;
+                        var siblings = element.parentNode.childNodes;
+                        for (var i = 0; i < siblings.length; i++) {
+                            var sibling = siblings[i];
+                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
+                        }
+                    }
+                    return getXPath(arguments[0]);
+                    """
+                    biz_link_xpath = driver.execute_script(xpath_script, biz_link_element)
+                    pdf_path = pdf_extractor.click_and_get_download_link(biz_link_xpath)
+                    if pdf_path:
+                        item_downloads["사업방법서"] = pdf_path
                 except NoSuchElementException:
                     pass
 
@@ -129,7 +195,7 @@ def extract_level3_data(driver, category_name_step1, category_name_step2, all_ex
                     "2단계 카테고리": category_name_step2,
                     "제품명": product_name,
                     "판매기간": sales_period,
-                    "다운로드_인자": item_downloads  # 추출된 데이터를 '다운로드_인자' 키로 저장
+                    "다운로드_링크": item_downloads
                 })
                 print(f"      [추출 성공] 제품: '{product_name}'")
 
@@ -254,14 +320,35 @@ def crawl_website(url):
         print("\n--- 전체 크롤링 완료 ---")
         if all_extracted_data:
             print(f"\n--- 최종 추출된 전체 데이터 ({len(all_extracted_data)}개 제품) ---")
-            with open("extracted_insurance_data.json", "w", encoding="utf-8") as f:
-                json.dump(all_extracted_data, f, ensure_ascii=False, indent=4)
-            print("\n모든 추출된 데이터가 'extracted_insurance_data.json' 파일로 저장되었습니다.")
+            if DatabaseManager:
+                db_name = "mggeneralins_web_data.db"
+                structured_rows = []
+                scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                company_name = "MG손해보험"
 
-            if all_extracted_data:
-                print("\n[예시 데이터 (첫 번째 항목)]:")
-                print(json.dumps(all_extracted_data[0], ensure_ascii=False, indent=4))
+                for item in all_extracted_data:
+                    product_name = item["제품명"]
+                    sales_period = item["판매기간"]
+                    product_code = None  # 사용자 요청에 따라 None으로 설정
 
+                    for doc_type, link in item["다운로드_링크"].items():
+                        if link:
+                            structured_rows.append((
+                                company_name,
+                                product_name,
+                                product_code,
+                                doc_type,
+                                sales_period,
+                                scraped_at,
+                                link
+                            ))
+                if structured_rows:
+                    with DatabaseManager(db_name=db_name) as db_manager:
+                        db_manager.save_data(structured_rows)
+                else:
+                    print("데이터베이스에 저장할 구조화된 데이터가 없습니다.")
+            else:
+                print("DatabaseManager를 임포트할 수 없어 DB 저장을 건너뜁니다.")
         else:
             print("\n추출된 제품 데이터가 없습니다.")
 
