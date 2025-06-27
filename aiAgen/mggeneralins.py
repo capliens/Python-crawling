@@ -1,4 +1,4 @@
-# MG손해보험:
+# MG손해보험/판매중지페이지/db확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
