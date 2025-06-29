@@ -1,4 +1,4 @@
-# 하나손해보험/판매중지페이지/db확인
+# 하나손해보험/판매중지페이지
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By

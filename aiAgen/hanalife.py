@@ -1,4 +1,4 @@
-# 하나생명/판매중단페이지/db 확인
+# 하나생명/판매중단페이지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options

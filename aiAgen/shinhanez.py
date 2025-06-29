@@ -1,4 +1,4 @@
-# 신한EZ손해보험/DB확인/느낌상 판매중지도 같이들어갈듯
+# 신한EZ손해보험/약관,약관 링크만 나옴/느낌상 판매중지도 같이들어갈듯/수정후 db확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -316,7 +316,7 @@ if __name__ == "__main__":
 
         # DatabaseManager를 사용하여 데이터 저장
         try:
-            with DatabaseManager(db_name="KDBlife_web_data.db") as db_manager:
+            with DatabaseManager(db_name="shinhanez_web_data.db") as db_manager:
                 structured_rows = []
                 for item in scraped_data:
                     structured_rows.append([

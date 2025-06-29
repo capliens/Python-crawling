@@ -1,4 +1,5 @@
-# 카디프생명/판매중지페이지/왜 가로채기가 되는거지?(일부는 href 주소를 가져옴)
+# 카디프생명/판매중지페이지/왜 가로채기가 되는거지?(일부는 href 주소를 가져옴/사이트에 파일이 없음)
+#  https://www.cardif.co.kr/common/rest/fileDownloadFront.do?fileId=351349&atchFileDiv=DIS&frontBackDiv=Front
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
