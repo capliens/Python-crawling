@@ -1,4 +1,4 @@
-# 미래에셋생명 상품 /판매 중단/db연결/링크 연결
+# 미래에셋생명 상품 /판매 중단/DB확인
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -7,6 +7,24 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import traceback
+import os
+import sys
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.pdf_link_scraper import PdfLinkExtractor
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    PdfLinkExtractor = None
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
+
+DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "miraeasset")  # 다운로드 폴더명 구체화
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
 
 
 def get_miraeasset_product_info():
@@ -102,12 +120,26 @@ def get_miraeasset_product_info():
 
                 # 판매기간 정보가 있는 행만 유효한 데이터로 간주 (상품명만 있는 행 제외)
                 if sales_period != "N/A" and sales_period.strip() != "":
+                    # PDF 링크 추출
+                    pdf_extractor = PdfLinkExtractor()
+                    extracted_summary_pdf_link = pdf_extractor.extract_pdf_link(summary_link) if summary_link != "N/A" else "N/A"
+                    extracted_terms_pdf_links = []
+                    if terms_link != "N/A":
+                        for link in terms_link.split(', '):
+                            extracted_terms_pdf_links.append(pdf_extractor.extract_pdf_link(link.strip()))
+                    extracted_terms_pdf_link = ", ".join(extracted_terms_pdf_links) if extracted_terms_pdf_links else "N/A"
+                    extracted_business_manual_pdf_link = pdf_extractor.extract_pdf_link(
+                        business_manual_link) if business_manual_link != "N/A" else "N/A"
+
                     products_data.append({
                         "product_name": current_product_name,
                         "sales_period": sales_period,
                         "summary_link": summary_link,
                         "terms_link": terms_link,
-                        "business_manual_link": business_manual_link
+                        "business_manual_link": business_manual_link,
+                        "extracted_summary_pdf_link": extracted_summary_pdf_link,
+                        "extracted_terms_pdf_link": extracted_terms_pdf_link,
+                        "extracted_business_manual_pdf_link": extracted_business_manual_pdf_link
                     })
             # else:
                 # th만 있고 td가 없는 행 (예: 상품명만 있는 첫 행의 일부)은 이미 current_product_name만 업데이트하고 넘어감.
@@ -132,12 +164,53 @@ if __name__ == '__main__':
     product_list = get_miraeasset_product_info()
 
     if product_list:
-        for idx, info in enumerate(product_list):
-            print(f"\n--- 상품 {idx + 1} ---")
-            print(f"상품명: {info.get('product_name', 'N/A')}")
-            print(f"판매기간: {info.get('sales_period', 'N/A')}")
-            print(f"상품요약서: {info.get('summary_link', 'N/A')}")
-            print(f"약관: {info.get('terms_link', 'N/A')}")
-            print(f"사업방법서: {info.get('business_manual_link', 'N/A')}")
+        db_manager = None
+        try:
+            if DatabaseManager:
+                db_manager = DatabaseManager('aig_ins_web_data.db')  # DB 파일명 확인 필요
+                db_manager.create_table()
+            else:
+                print("DatabaseManager를 사용할 수 없습니다. DB 저장을 건너뜝니다.")
+
+            for idx, info in enumerate(product_list):
+                print(f"\n--- 상품 {idx + 1} ---")
+                print(f"상품명: {info.get('product_name', 'N/A')}")
+                print(f"판매기간: {info.get('sales_period', 'N/A')}")
+                print(f"상품요약서 (원본): {info.get('summary_link', 'N/A')}")
+                print(f"상품요약서 (추출 PDF): {info.get('extracted_summary_pdf_link', 'N/A')}")
+                print(f"약관 (원본): {info.get('terms_link', 'N/A')}")
+                print(f"약관 (추출 PDF): {info.get('extracted_terms_pdf_link', 'N/A')}")
+                print(f"사업방법서 (원본): {info.get('business_manual_link', 'N/A')}")
+                print(f"사업방법서 (추출 PDF): {info.get('extracted_business_manual_pdf_link', 'N/A')}")
+
+                if db_manager:
+                    company_name = "미래에셋생명"
+                    product_name = info.get('product_name', 'N/A')
+                    sales_period = info.get('sales_period', 'N/A')
+                    product_code = None  # product_code는 null
+
+                    # 상품요약서 저장
+                    summary_pdf_link = info.get('extracted_summary_pdf_link', 'N/A')
+                    if summary_pdf_link != "N/A":
+                        db_manager.save_data(company_name, product_name, product_code, "상품요약서", sales_period, summary_pdf_link)
+
+                    # 약관 저장
+                    terms_pdf_link = info.get('extracted_terms_pdf_link', 'N/A')
+                    if terms_pdf_link != "N/A":
+                        # 약관 링크가 여러 개일 수 있으므로 분리하여 저장
+                        for link in terms_pdf_link.split(', '):
+                            if link.strip():
+                                db_manager.save_data(company_name, product_name, product_code, "약관", sales_period, link.strip())
+
+                    # 사업방법서 저장
+                    business_manual_pdf_link = info.get('extracted_business_manual_pdf_link', 'N/A')
+                    if business_manual_pdf_link != "N/A":
+                        db_manager.save_data(company_name, product_name, product_code, "사업방법서", sales_period, business_manual_pdf_link)
+        except Exception as e:
+            print(f"DB 저장 중 오류 발생: {e}")
+            traceback.print_exc()
+        finally:
+            if db_manager:
+                db_manager.close()
     else:
         print("최종 추출된 상품 정보가 없습니다.")
