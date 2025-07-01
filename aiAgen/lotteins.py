@@ -1,4 +1,4 @@
-# 롯데손해보험
+# 롯데손해보험/판매중지페이지/db확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -10,7 +10,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import sys
 import os
-import json
+from datetime import datetime  # datetime 모듈 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -112,10 +112,10 @@ def scrape_lotte_insurance_table(url):
                                 sales_period_ul = driver.find_element(By.ID, "step3view").find_element(By.CLASS_NAME, "product_list")
                                 sales_period_items = sales_period_ul.find_elements(By.TAG_NAME, "li")
 
-                                for l in range(len(sales_period_items)):
+                                for sales_period_idx in range(len(sales_period_items)):  # 'l'을 'sales_period_idx'로 변경
                                     sales_period_ul = driver.find_element(By.ID, "step3view").find_element(By.CLASS_NAME, "product_list")
                                     sales_period_items = sales_period_ul.find_elements(By.TAG_NAME, "li")
-                                    current_sales_period_item = sales_period_items[l]
+                                    current_sales_period_item = sales_period_items[sales_period_idx]  # 'l'을 'sales_period_idx'로 변경
 
                                     sales_period_text = current_sales_period_item.find_element(By.TAG_NAME, "span").text
                                     print(f"      >>> 판매 기간 처리 중 (JS): {sales_period_text}")
@@ -154,7 +154,7 @@ def scrape_lotte_insurance_table(url):
                                         all_product_data.append(product_info)
 
                                     except StaleElementReferenceException:
-                                        print(f"      >>> 판매 기간 항목에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
+                                        print("      >>> 판매 기간 항목에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
                                         continue
                                     except NoSuchElementException as e:
                                         print(f"      >>> step4view에서 요소를 찾을 수 없습니다: {e}")
@@ -162,7 +162,7 @@ def scrape_lotte_insurance_table(url):
                                         print(f"      >>> 판매 기간 처리 중 오류 발생: {e}")
 
                             except StaleElementReferenceException:
-                                print(f"    >> 상품 항목에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
+                                print("    >> 상품 항목에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
                                 continue
                             except NoSuchElementException as e:
                                 print(f"    >> 상품에 대한 step3view에서 요소를 찾을 수 없습니다: {e}")
@@ -170,7 +170,7 @@ def scrape_lotte_insurance_table(url):
                                 print(f"    >> 상품 처리 중 오류 발생: {e}")
 
                     except StaleElementReferenceException:
-                        print(f"  > 하위 카테고리 링크에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
+                        print("  > 하위 카테고리 링크에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
                         continue
                     except NoSuchElementException as e:
                         print(f"  > 하위 카테고리 클릭 후 요소를 찾을 수 없습니다: {e}")
@@ -178,7 +178,7 @@ def scrape_lotte_insurance_table(url):
                         print(f"  > 하위 카테고리 처리 중 오류 발생: {e}")
 
             except StaleElementReferenceException:
-                print(f"--- 메인 카테고리에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
+                print("--- 메인 카테고리에서 StaleElementReferenceException 발생. 재시도 또는 건너뛰기.")
                 continue
             except NoSuchElementException as e:
                 print(f"--- 메인 카테고리에서 요소를 찾을 수 없습니다: {e}")
@@ -203,12 +203,47 @@ if __name__ == "__main__":
     scraped_data = scrape_lotte_insurance_table(lotte_insurance_url)
 
     if scraped_data:
-        print("\n--- 스크랩된 데이터 (JSON 형식) ---")
-        json_output_string = json.dumps(scraped_data, indent=4, ensure_ascii=False)
-        print(json_output_string)
+        print("\n--- 스크랩된 데이터를 DB에 저장 중 ---")
+        company_name = "롯데손해보험"
+        db_name = f"{company_name.replace(' ', '')}_web_data.db"
 
-        with open("lotte_insurance_product_data.json", "w", encoding="utf-8") as f:
-            json.dump(scraped_data, f, indent=4, ensure_ascii=False)
-        print("\n데이터가 lotte_insurance_product_data.json 파일에 저장되었습니다.")
+        # DB 저장 형식에 맞게 데이터 변환
+        structured_rows = []
+        scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        allowed_doc_types = {"약관", "사업방법서", "상품요약서"}
+
+        for product_info in scraped_data:
+            product_name = product_info.get("상품명")
+            sales_period = product_info.get("판매기간")
+
+            # product_code는 NULL로 설정
+            product_code = None
+
+            # PDF 링크들을 순회하며 DB 저장 형식에 맞게 추가
+            for doc_type_key, link in product_info.items():
+                if " PDF" in doc_type_key and link:  # 링크가 존재하고 PDF 문서 타입인 경우
+                    document_type = doc_type_key.replace(" PDF", "")
+
+                    if document_type in allowed_doc_types:  # 허용된 문서 타입만 저장
+                        structured_rows.append((
+                            company_name,
+                            product_name,
+                            product_code,  # NULL
+                            document_type,
+                            sales_period,
+                            scraped_at,
+                            link
+                        ))
+
+        if DatabaseManager:
+            with DatabaseManager(db_name=db_name) as db_manager:
+                saved_count = db_manager.save_data(structured_rows)
+                if saved_count > 0:
+                    print(f"\n{saved_count}건의 데이터가 {db_name} 파일에 성공적으로 저장되었습니다.")
+                else:
+                    print("\nDB에 저장할 데이터가 없거나 저장 중 오류가 발생했습니다.")
+        else:
+            print("\nDatabaseManager를 임포트할 수 없어 DB에 데이터를 저장할 수 없습니다.")
     else:
         print("\n스크랩된 데이터가 없습니다.")
