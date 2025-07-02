@@ -1,4 +1,5 @@
-# im라이프/판매중단페이지/db확인/pdf저장 이슈,db저장위치 이슈 db 저장안됨
+# im라이프/판매중단페이지/db확인
+# 코드 수정
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -10,23 +11,38 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 import os
 import sys
-from datetime import datetime  # datetime 임포트 추가
+from datetime import datetime
+import shutil  # 기존 다운로드 폴더 삭제를 위한 shutil 임포트 (테스트용)
 
+# 프로젝트 루트 경로 설정 (스크립트 위치에서 두 단계 위)
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 try:
     from neoali.pdf_link_scraper import PdfLinkExtractor
-    from neoali.DB_save import DatabaseManager  # DatabaseManager 임포트 활성화
+    from neoali.DB_save import DatabaseManager
 except ImportError as e:
     PdfLinkExtractor = None
-    DatabaseManager = None  # DatabaseManager 초기화
+    DatabaseManager = None
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
-MG_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "imlifeins")
-if not os.path.exists(MG_DOWNLOAD_DIR):
-    os.makedirs(MG_DOWNLOAD_DIR)
+# PDF 다운로드 디렉토리 (스크립트 파일 위치 기준)
+DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "imlifeins")
+
+# 다운로드 디렉토리 생성 (기존에 있다면 삭제 후 재생성 - 테스트용)
+if os.path.exists(DOWNLOAD_DIR):
+    try:
+        shutil.rmtree(DOWNLOAD_DIR)
+        print(f"기존 다운로드 디렉토리 삭제: {DOWNLOAD_DIR}")
+    except OSError as e:
+        print(f"오류: 기존 다운로드 디렉토리 삭제 실패 ({DOWNLOAD_DIR}): {e}. 권한 문제를 확인하세요.")
+        # 권한 문제 시 스크립트를 중지하거나 다른 조치를 취할 수 있습니다.
+        # sys.exit(1) # 예시: 오류 시 스크립트 종료
+
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
+    print(f"다운로드 디렉토리 생성: {DOWNLOAD_DIR}")
 
 
 def get_product_info(url):
@@ -34,34 +50,40 @@ def get_product_info(url):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev_shm_usage")
 
+    # Chrome이 PDF를 자동으로 다운로드하도록 설정
+    prefs = {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "plugins.always_open_pdf_externally": True
+    }
+    options.add_experimental_option("prefs", prefs)
+
     driver = None
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
 
-        # 페이지 로드를 기다립니다.
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
 
         pdf_extractor = None
-        if PdfLinkExtractor:  # PdfLinkExtractor가 성공적으로 임포트된 경우에만 인스턴스 생성
-            pdf_extractor = PdfLinkExtractor(driver, download_directory=MG_DOWNLOAD_DIR, verify_url_liveness=False)
+        if PdfLinkExtractor:
+            pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR, verify_url_liveness=False)
 
         product_list = []
         tables = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, "table.colTbl tbody"))
         )
 
-        for table_idx, table in enumerate(tables):  # 테이블 인덱스 추가
-            last_product_name = ""  # rowspan이 적용된 상품명을 추적
+        for table_idx, table in enumerate(tables):
+            last_product_name = ""
             rows = table.find_elements(By.TAG_NAME, "tr")
-            for row_idx, row in enumerate(rows):  # 행 인덱스 추가
-                # 각 행에서 td 요소를 찾습니다.
+            for row_idx, row in enumerate(rows):
                 cols = row.find_elements(By.TAG_NAME, "td")
 
-                # td 요소가 없는 행 (예: th만 있는 행)은 건너뜁니다.
                 if not cols:
                     continue
 
@@ -72,7 +94,6 @@ def get_product_info(url):
                 business_method_link = ""
                 terms_link = ""
 
-                # 상품명 추출: class="al"을 가진 td를 찾습니다.
                 product_name_element_found = False
                 for col in cols:
                     if "al" in col.get_attribute("class"):
@@ -82,9 +103,8 @@ def get_product_info(url):
                         break
 
                 if not product_name_element_found:
-                    current_product_name = last_product_name  # 이전 상품명 사용
+                    current_product_name = last_product_name
 
-                # 상품명 td의 인덱스를 찾아서 그 다음 td부터 판매기간 및 링크를 추출합니다.
                 start_index_for_data = 0
                 if product_name_element_found:
                     for i, col in enumerate(cols):
@@ -92,57 +112,56 @@ def get_product_info(url):
                             start_index_for_data = i + 1
                             break
 
-                # 판매개시일
                 if start_index_for_data < len(cols):
                     sales_start_date = cols[start_index_for_data].text.strip()
 
-                # 판매중지일
                 if start_index_for_data + 1 < len(cols):
                     sales_end_date = cols[start_index_for_data + 1].text.strip()
 
                 sales_period = f"{sales_start_date} ~ {sales_end_date}"
 
-                # 각 링크에 대한 XPath를 동적으로 생성하여 PdfLinkExtractor 사용
-                # click_and_get_download_link 함수 사용
+                if pdf_extractor:
+                    # 상품요약서 링크
+                    if start_index_for_data + 2 < len(cols):
+                        try:
+                            summary_a_tag = cols[start_index_for_data + 2].find_element(By.TAG_NAME, "a")
+                            summary_link_href = summary_a_tag.get_attribute("href")
+                            if summary_link_href and "javascript" not in summary_link_href:
+                                summary_link = summary_link_href
+                            else:
+                                extracted_link = pdf_extractor.click_and_get_download_link(summary_a_tag)
+                                if extracted_link:
+                                    summary_link = extracted_link
+                        except NoSuchElementException:
+                            pass
 
-                # 상품요약서 링크
-                if start_index_for_data + 2 < len(cols):
-                    try:
-                        summary_a_tag = cols[start_index_for_data + 2].find_element(By.TAG_NAME, "a")
-                        summary_title = summary_a_tag.get_attribute("title")
-                        if summary_title and pdf_extractor:
-                            summary_xpath = f"//a[@title='{summary_title}']"
-                            extracted_link = pdf_extractor.click_and_get_download_link(summary_xpath)
-                            if extracted_link:
-                                summary_link = extracted_link
-                    except NoSuchElementException:
-                        pass
+                    # 사업방법서 링크
+                    if start_index_for_data + 3 < len(cols):
+                        try:
+                            business_method_a_tag = cols[start_index_for_data + 3].find_element(By.TAG_NAME, "a")
+                            business_method_link_href = business_method_a_tag.get_attribute("href")
+                            if business_method_link_href and "javascript" not in business_method_link_href:
+                                business_method_link = business_method_link_href
+                            else:
+                                extracted_link = pdf_extractor.click_and_get_download_link(business_method_a_tag)
+                                if extracted_link:
+                                    business_method_link = extracted_link
+                        except NoSuchElementException:
+                            pass
 
-                # 사업방법서 링크
-                if start_index_for_data + 3 < len(cols):
-                    try:
-                        business_method_a_tag = cols[start_index_for_data + 3].find_element(By.TAG_NAME, "a")
-                        business_method_title = business_method_a_tag.get_attribute("title")
-                        if business_method_title and pdf_extractor:
-                            business_method_xpath = f"//a[@title='{business_method_title}']"
-                            extracted_link = pdf_extractor.click_and_get_download_link(business_method_xpath)
-                            if extracted_link:
-                                business_method_link = extracted_link
-                    except NoSuchElementException:
-                        pass
-
-                # 보험약관 링크
-                if start_index_for_data + 4 < len(cols):
-                    try:
-                        terms_a_tag = cols[start_index_for_data + 4].find_element(By.TAG_NAME, "a")
-                        terms_title = terms_a_tag.get_attribute("title")
-                        if terms_title and pdf_extractor:
-                            terms_xpath = f"//a[@title='{terms_title}']"
-                            extracted_link = pdf_extractor.click_and_get_download_link(terms_xpath)
-                            if extracted_link:
-                                terms_link = extracted_link
-                    except NoSuchElementException:
-                        pass
+                    # 보험약관 링크
+                    if start_index_for_data + 4 < len(cols):
+                        try:
+                            terms_a_tag = cols[start_index_for_data + 4].find_element(By.TAG_NAME, "a")
+                            terms_link_href = terms_a_tag.get_attribute("href")
+                            if terms_link_href and "javascript" not in terms_link_href:
+                                terms_link = terms_link_href
+                            else:
+                                extracted_link = pdf_extractor.click_and_get_download_link(terms_a_tag)
+                                if extracted_link:
+                                    terms_link = extracted_link
+                        except NoSuchElementException:
+                            pass
 
                 product_list.append({
                     "상품명": current_product_name,
@@ -154,31 +173,32 @@ def get_product_info(url):
 
         # DB에 저장
         if DatabaseManager:
-            db_name = os.path.join(MG_DOWNLOAD_DIR, "_imlifeins_data.db")
+            # DB 파일 경로를 project_root로 지정
+            db_name = os.path.join(project_root, "imlifeins_web_data.db")
+            print(f"DB 파일 저장 경로: {db_name}")  # DB 저장 경로 확인용 출력
+
             with DatabaseManager(db_name=db_name) as db_manager:
                 structured_rows = []
                 scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                company_name = "IM라이프"  # 회사명 고정
+                company_name = "IM라이프"
 
                 for product in product_list:
                     product_name = product["상품명"]
                     sales_period = product["판매기간"]
 
-                    # 상품요약서
+                    # 링크가 있는 경우에만 DB에 저장
                     if product["상품요약서"]:
                         structured_rows.append((
-                            company_name, product_name, None,  # product_code는 현재 없음
+                            company_name, product_name, None,
                             "상품요약서", sales_period, scraped_at, product["상품요약서"]
                         ))
 
-                    # 사업방법서
                     if product["사업방법서"]:
                         structured_rows.append((
                             company_name, product_name, None,
                             "사업방법서", sales_period, scraped_at, product["사업방법서"]
                         ))
 
-                    # 약관
                     if product["약관"]:
                         structured_rows.append((
                             company_name, product_name, None,
@@ -187,30 +207,41 @@ def get_product_info(url):
 
                 if structured_rows:
                     db_manager.save_data(structured_rows)
+                    print(f"총 {len(structured_rows)}개의 데이터가 DB에 저장되었습니다.")
                 else:
                     print("DB에 저장할 데이터가 없습니다.")
 
         return product_list
 
     except TimeoutException:
-        print("페이지 로드 시간 초과")
+        print("페이지 로드 시간 초과 오류가 발생했습니다.")
         return None
     except Exception as e:
-        print(f"오류 발생: {e}")
+        print(f"스크래핑 중 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     finally:
         if driver:
             driver.quit()
+            print("WebDriver가 종료되었습니다.")
 
 
 if __name__ == "__main__":
     url = "https://www.imlifeins.co.kr/BA/BA_A020.do"
+    print(f"IM라이프 상품 정보 스크래핑 시작: {url}")
     product_data = get_product_info(url)
     if product_data:
+        print("\n--- 스크래핑된 상품 요약 정보 ---")
         for product in product_data:
-            print("--- 상품 정보 ---")
-            for key, value in product.items():
-                print(f"{key}: {value}")
+            print(f"  상품명: {product['상품명']}")
+            print(f"  판매기간: {product['판매기간']}")
+            if product['상품요약서']:
+                print(f"    상품요약서 링크 확인: {product['상품요약서']}")
+            if product['사업방법서']:
+                print(f"    사업방법서 링크 확인: {product['사업방법서']}")
+            if product['약관']:
+                print(f"    약관 링크 확인: {product['약관']}")
             print("-----------------")
     else:
-        print("상품 정보를 가져오지 못했습니다.")
+        print("상품 정보를 가져오지 못했습니다. 오류 메시지를 확인하세요.")

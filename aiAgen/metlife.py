@@ -1,9 +1,9 @@
 # 매트라이프 /db 확인 /판매중단패이지/db저장 이슈
+# 코드 수정
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import time
@@ -177,27 +177,8 @@ def is_valid_metlife_link(link_str):
         # PdfLinkExtractor를 사용한다면 네트워크 가로채기로 처리 가능하나, 여기서는 사용 안 함.
         return False
 
-    is_http_link = link_str.startswith("http")
-
-    # Metlife는 PdfLinkExtractor를 사용하지 않고 href를 직접 가져오므로,
-    # 로컬 파일 경로가 반환될 가능성은 낮음. 주로 HTTP 링크일 것.
-    # 따라서 로컬 파일 경로 검사는 생략하거나 단순화 가능.
-    is_local_pdf_file = False
-    if not is_http_link:
-        try:
-            # METLIFE_DOWNLOAD_DIR이 정의되어 있다면 사용, 아니면 일반 경로 검사
-            # 현재 METLIFE_DOWNLOAD_DIR은 PdfLinkExtractor와 함께 사용되므로, 여기서는 일반 경로만 가정
-            if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
-                is_local_pdf_file = True
-        except Exception:
-            pass
-    elif is_http_link and not link_str.lower().endswith(".pdf"):
-        # Metlife는 PDF 외 다른 문서(예: hwp)도 링크할 수 있으므로,
-        # 엄격하게 PDF만 원한다면 이 조건을 유지. 다양한 문서를 원하면 이 조건 제거 또는 수정.
-        # 현재는 PDF만 유효하다고 가정.
-        return False
-
-    return is_http_link or is_local_pdf_file
+    # HTTP 링크 확인 및 로컬 PDF 파일 확인 로직은 제거됩니다.
+    return True
 
 
 if __name__ == '__main__':

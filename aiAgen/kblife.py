@@ -1,4 +1,5 @@
-# KB라이프/판매중단페이지/pdf는 그냥 통합시킴/db 폴더위치 
+# KB라이프/판매중단페이지
+# db위치확인
 from webdriver_manager.chrome import ChromeDriverManager
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -13,7 +14,7 @@ import re
 import requests
 import logging
 import sys
-from datetime import datetime  # datetime 모듈에서 datetime 클래스 임포트 
+from datetime import datetime  # datetime 모듈에서 datetime 클래스 임포트
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -451,7 +452,7 @@ if __name__ == "__main__":
                 logger.info("-" * 30)
 
             # DB 저장 로직 추가
-            db_name = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_web_data.db")
+            db_name = os.path.join(project_root, "kblife_web_data.db")
             with DatabaseManager(db_name=db_name) as db_manager:
                 total_saved_count = 0
                 for product in all_products_data:

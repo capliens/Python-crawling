@@ -1,4 +1,5 @@
 # NH농협손해/판매중지 페이지/db확인/pdf가져오기 오류
+# 코드수정
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -198,6 +199,11 @@ def scrape_nhfire_products_hierarchical(url):
     상품 요약 및 상세 테이블 데이터를 웹 스크랩합니다.
     """
     chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "plugins.always_open_pdf_externally": True
+    })
     # chrome_options.add_argument("--headless") # 필요하다면 주석 해제
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")

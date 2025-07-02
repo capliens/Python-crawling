@@ -1,4 +1,4 @@
-# 신한EZ손해보험/약관,약관 링크만 나옴/느낌상 판매중지도 같이들어갈듯/수정후 db확인
+# 신한EZ손해보험/db확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -243,7 +243,10 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                     print("    PdfLinkExtractor가 초기화되지 않아 PDF 다운로드 시도 건너뜀.")
 
                                 print(
-                                    f"      다운로드 상태: 상품요약={download_links_status['상품요약']}, 약관={download_links_status['약관']}, 사업방법서={download_links_status['사업방법서']}")
+                                    f"      다운로드 상태: 상품요약={download_links_status['상품요약']}, "
+                                    f"약관={download_links_status['약관']}, "
+                                    f"사업방법서={download_links_status['사업방법서']}"
+                                )
 
                                 all_scraped_data.append({
                                     "상품명": product_name,
@@ -319,16 +322,39 @@ if __name__ == "__main__":
             with DatabaseManager(db_name="shinhanez_web_data.db") as db_manager:
                 structured_rows = []
                 for item in scraped_data:
-                    structured_rows.append([
-                        "신한EZ손해보험",  # company_name
-                        item["상품명"],
-                        "",  # product_code (일단 비워둠)
-                        ("약관" if item["약관_PDF_경로"] else ("상품요약" if item["상품요약_PDF_경로"] else "사업방법서")) if (
-                            item["약관_PDF_경로"] or item["상품요약_PDF_경로"] or item["사업방법서_PDF_경로"]) else None,
-                        item["판매기간"],
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        item["약관_PDF_경로"] or item["상품요약_PDF_경로"] or item["사업방법서_PDF_경로"]
-                    ])
+                    # 약관 저장
+                    if item["약관_PDF_경로"]:
+                        structured_rows.append([
+                            "신한EZ손해보험",  # company_name
+                            item["상품명"],
+                            "",  # product_code (일단 비워둠)
+                            "약관",
+                            item["판매기간"],
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            item["약관_PDF_경로"]
+                        ])
+                    # 상품요약 저장
+                    if item["상품요약_PDF_경로"]:
+                        structured_rows.append([
+                            "신한EZ손해보험",  # company_name
+                            item["상품명"],
+                            "",  # product_code (일단 비워둠)
+                            "상품요약",
+                            item["판매기간"],
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            item["상품요약_PDF_경로"]
+                        ])
+                    # 사업방법서 저장
+                    if item["사업방법서_PDF_경로"]:
+                        structured_rows.append([
+                            "신한EZ손해보험",  # company_name
+                            item["상품명"],
+                            "",  # product_code (일단 비워둠)
+                            "사업방법서",
+                            item["판매기간"],
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            item["사업방법서_PDF_경로"]
+                        ])
                 saved_count = db_manager.save_data(structured_rows)
                 print(f"\n총 {len(scraped_data)}개의 데이터 중 {saved_count}건 저장 완료.")
         except Exception as e:
