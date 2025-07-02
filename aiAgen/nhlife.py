@@ -1,4 +1,4 @@
-# nh농협생명/DB저장기능추가/판매중단도 섞여잇음
+# nh농협생명/DB확인
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -12,13 +12,21 @@ import os
 import sys
 from datetime import datetime
 import re
-import json  # JSON 저장을 위해 추가
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 # --- 설정 ---
 URL = "https://www.nhlife.co.kr/ho/on/HOON0004M00.nhl"
 # PDF 뷰어의 기본 URL (다운로드 링크 생성에 사용)
 BASE_PDF_VIEWER_URL = "https://www.nhlife.co.kr/pdfViewerPopup.nhl"
-OUTPUT_JSON_FILE = "nhlife_product_data.json"  # JSON 파일명 추가
 
 chrome_options = Options()
 # chrome_options.add_argument("--headless") # 필요에 따라 headless 모드를 활성화할 수 있습니다.
@@ -55,7 +63,6 @@ def extract_all_modal_data(driver_instance):
         "document_details": []  # 각 문서의 상세 정보 (판매기간, 다운로드 ID 등)
     }
 
-    modal_wrapper_selector = (By.ID, "pop_wrapper")
     try:
         pass
     except TimeoutException:
@@ -402,11 +409,66 @@ if __name__ == "__main__":
 
         # --- 메인 테이블 페이지네이션 루프 끝 ---
 
-        # 추출된 모든 데이터를 JSON 파일로 저장
-        print(f"[{datetime.now()}] 모든 데이터 추출 완료. JSON 파일로 저장 중: {OUTPUT_JSON_FILE}")
-        with open(OUTPUT_JSON_FILE, 'w', encoding='utf-8') as f:
-            json.dump(all_extracted_product_data, f, ensure_ascii=False, indent=4)
-        print(f"[{datetime.now()}] 데이터가 '{OUTPUT_JSON_FILE}' 파일에 성공적으로 저장되었습니다.")
+        # 추출된 모든 데이터를 DB에 저장
+        print(f"[{datetime.now()}] 모든 데이터 추출 완료. DB에 저장 중...")
+        if DatabaseManager:
+            db_manager = DatabaseManager(db_name="nhlife_web_data.db")  # DB 파일명 지정
+            structured_rows_to_save = []
+            scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            company_name = "NH농협생명"  # 회사명 고정
+
+            for product_data in all_extracted_product_data:
+                product_title = product_data.get("product_title", "알 수 없는 상품")
+                document_details = product_data.get("document_details", [])
+
+                for doc_detail in document_details:
+                    period = doc_detail.get("period", "N/A")
+                    download_links = doc_detail.get("download_links", {})
+
+                    # 상품요약서
+                    summary_info = download_links.get("summary")
+                    if summary_info and summary_info.get("download_url"):
+                        structured_rows_to_save.append([
+                            company_name,
+                            product_title,
+                            None,
+                            "상품요약서",
+                            period,
+                            scraped_time,
+                            summary_info["download_url"],
+                        ])
+
+                    # 사업방법서
+                    business_info = download_links.get("business")
+                    if business_info and business_info.get("download_url"):
+                        structured_rows_to_save.append([
+                            company_name,
+                            product_title,
+                            None,
+                            "사업방법서",
+                            period,
+                            scraped_time,
+                            business_info["download_url"],
+                        ])
+
+                    # 보험약관
+                    policy_info = download_links.get("policy")
+                    if policy_info and policy_info.get("download_url"):
+                        structured_rows_to_save.append([
+                            company_name,
+                            product_title,
+                            None,
+                            "약관",
+                            period,
+                            scraped_time,
+                            policy_info["download_url"],
+                        ])
+
+            with db_manager as db:
+                db.save_data(structured_rows_to_save)
+            print(f"[{datetime.now()}] 데이터가 DB에 성공적으로 저장되었습니다.")
+        else:
+            print(f"[{datetime.now()}] 경고: DatabaseManager를 임포트할 수 없어 DB 저장을 건너뜁니다.")
 
     except TimeoutException:
         print(f"[{datetime.now()}] 오류: 메인 페이지 로딩 중 타임아웃 발생. URL: {URL}")
