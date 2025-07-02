@@ -1,4 +1,4 @@
-# 카디프생명/판매중지페이지/수정확인
+# 카디프생명/판매중지페이지/DB확인
 #  https://www.cardif.co.kr/common/rest/fileDownloadFront.do?fileId=351349&atchFileDiv=DIS&frontBackDiv=Front
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -10,72 +10,41 @@ import time
 import os
 import sys
 from datetime import datetime
-import json
 
-# 프로젝트 루트 경로 설정 (기존과 동일)
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# neoali 모듈 임포트
 try:
     from neoali.pdf_link_scraper import PdfLinkExtractor
-    from neoali.DB_save import DatabaseManager
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
 except ImportError as e:
     PdfLinkExtractor = None
-    DatabaseManager = None
+    DatabaseManager = None  # DatabaseManager 초기화 추가
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
-
-def get_pdf_link_robustly(pdf_extractor, element_td):
-    """
-    <td> 요소에서 PDF 링크를 추출하는 헬퍼 함수.
-    pdf_extractor를 사용하고, 실패 시 href를 직접 반환합니다.
-    href가 'javascript:void(0);'이면 빈 문자열을 반환하여 DB 저장에서 제외합니다.
-    """
-    a_tag = element_td.find_elements(By.TAG_NAME, "a")
-    if a_tag:
-        link_element = a_tag[0]
-        link_id = link_element.get_attribute("id")
-
-        extracted_link = ""
-        if link_id:  # ID가 있다면 PdfLinkExtractor 시도
-            xpath_for_extractor = f"//a[@id='{link_id}']"
-            extracted_link = pdf_extractor.extract_pdf_link(None, xpath_for_extractor)
-
-        # PdfLinkExtractor에서 링크를 얻지 못했거나, 처음부터 ID가 없었다면 href 속성을 사용
-        if not extracted_link:
-            raw_href = link_element.get_attribute("href")
-            # "javascript:void(0);" 인 경우 빈 문자열로 처리하여 저장하지 않음
-            if raw_href and raw_href.strip() != "javascript:void(0);":
-                extracted_link = raw_href
-            else:
-                return ""  # javascript:void(0); 이거나 빈 href인 경우
-
-        return extracted_link
-    return ""
+MG_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "cardif")
+if not os.path.exists(MG_DOWNLOAD_DIR):
+    os.makedirs(MG_DOWNLOAD_DIR)
 
 
 def scrape_cardif_data():
     driver = None
     try:
-        # 다운로드 디렉토리 설정 및 생성 (함수 시작 시 한 번만)
-        download_dir = os.path.join(os.getcwd(), "neoali", "aiAgen", "downloads", "cardif")
-        os.makedirs(download_dir, exist_ok=True)
-        print(f"다운로드 디렉토리: {download_dir}")
 
+        # Chrome WebDriver 설정 (크롬 드라이버 경로를 지정해야 할 수 있습니다)
+        # driver = webdriver.Chrome(executable_path='경로/chromedriver')
         service = Service(ChromeDriverManager().install())
         options = webdriver.ChromeOptions()
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--start-maximized')  # 브라우저 최대화 추가
+        options.add_argument('--no-sandbox')  # 샌드박스 비활성화 (Docker 환경 등에서 유용)
+        options.add_argument('--disable-dev-shm-usage')  # /dev/shm 사용 비활성화 (일부 Linux 환경에서 유용)
 
-        # 다운로드 설정
+        # 다운로드 설정 추가
         prefs = {
-            "download.default_directory": download_dir,
-            "download.prompt_for_download": False,
+            "download.default_directory": MG_DOWNLOAD_DIR,
+            "download.prompt_for_download": False,  # 다운로드 프롬프트 비활성화
             "download.directory_upgrade": True,
-            "plugins.always_open_pdf_externally": True
+            "plugins.always_open_pdf_externally": True  # PDF를 외부 뷰어로 열도록 설정 (다운로드 유도)
         }
         options.add_experimental_option("prefs", prefs)
         driver = webdriver.Chrome(service=service, options=options)
@@ -84,10 +53,11 @@ def scrape_cardif_data():
         driver.get(url)
 
         # PdfLinkExtractor 초기화
-        pdf_extractor = PdfLinkExtractor(driver, download_directory=download_dir)
+        pdf_extractor = PdfLinkExtractor(driver, download_directory=MG_DOWNLOAD_DIR)
 
         all_product_data = []
 
+        # 상품 카테고리 (저축성, 보장성) 순회
         categories = [
             {"id": "case_save", "name": "저축성"},
             {"id": "case_cover", "name": "보장성"}
@@ -98,69 +68,113 @@ def scrape_cardif_data():
             category_name = category["name"]
             print(f"\n--- {category_name} 보험 데이터 수집 시작 ---")
 
+            # 해당 카테고리 라디오 버튼의 label 클릭
             category_label = selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, f"//label[@for='{category_id}']"))
             )
             category_label.click()
             print(f"'{category_name}' 라디오 버튼의 label 클릭 완료.")
+            time.sleep(2)  # 페이지 내용 업데이트 대기
 
-            # 페이지 내용 업데이트 및 select 요소 로드 대기
+            # 상품 코드 select 요소 로드 기다립니다.
             selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.ID, "productList"))
             )
-            time.sleep(1)  # JavaScript 처리 대기 (필요 시 유지)
             print("상품 코드 select 요소 로드 완료.")
 
+            # 상품 코드 select 요소 찾기
             select_element = driver.find_element(By.ID, "productList")
             select = selenium.webdriver.support.ui.Select(select_element)
             print("Select 객체 생성 완료.")
 
+            # 모든 옵션 값 가져오기 (첫 번째 "선택" 옵션 제외)
             product_codes = [option.get_attribute("value") for option in select.options if option.get_attribute("value") != ""]
             print(f"총 {len(product_codes)}개의 상품 코드 발견: {product_codes}")
 
             for code in product_codes:
                 print(f"\n상품 코드: {code} 데이터 수집 중...")
-
-                # select 요소를 재선택
+                # select 요소가 다시 나타날 때까지 기다립니다.
                 selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
-                    EC.staleness_of(select_element)  # 이전 select 요소가 사라지기를 기다림 (카테고리 변경 시)
-                    or EC.presence_of_element_located((By.ID, "productList"))  # 또는 현재 select 요소가 나타나기를 기다림
+                    EC.presence_of_element_located((By.ID, "productList"))
                 )
-                select_element = driver.find_element(By.ID, "productList")  # 안전을 위해 다시 찾기
-                select = selenium.webdriver.support.ui.Select(select_element)
+                select_element_in_loop = driver.find_element(By.ID, "productList")
+                select = selenium.webdriver.support.ui.Select(select_element_in_loop)
                 select.select_by_value(code)
                 print(f"상품 코드 {code} 선택 완료.")
 
+                # 조회 버튼 클릭
                 search_button = driver.find_element(By.ID, "select_file_btn")
                 search_button.click()
                 print("조회 버튼 클릭 완료.")
 
+                # 테이블 로드를 기다립니다.
                 selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, '//div[@class="tableWrap type02 mt1"]/table'))
                 )
-                time.sleep(2)  # 테이블 내용 로드에 충분한 시간 확보 (필요 시 조정)
+                time.sleep(3)  # 페이지 로드 후 추가 대기 (충분한 시간 확보)
                 print("테이블 로드 완료.")
 
+                # 상품명 추출 (테이블 밖에서) - 각 상품 조회 후 업데이트
                 product_title_element = selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.ID, "product_title"))
                 )
                 current_product_name = product_title_element.text.strip()
                 print(f"현재 상품명: {current_product_name}")
 
+                # 테이블에서 데이터 추출
                 table = driver.find_element(By.XPATH, '//div[@class="tableWrap type02 mt1"]/table')
                 rows = table.find_elements(By.TAG_NAME, "tr")
 
+                # 첫 번째 행은 헤더이므로 건너뜁니다.
                 for row in rows[1:]:
                     cols = row.find_elements(By.TAG_NAME, "td")
                     if len(cols) > 0:
-                        sales_period = cols[0].text.strip()
-                        product_name = current_product_name  # 각 행의 상품명은 현재 조회된 상품명
+                        sales_period = cols[0].text.strip()  # 판매기간은 첫 번째 td
 
-                        # 헬퍼 함수를 사용하여 PDF 링크 추출
-                        # get_pdf_link_robustly에서 "javascript:void(0);" 링크를 걸러냄
-                        product_summary_link = get_pdf_link_robustly(pdf_extractor, cols[1]) if len(cols) > 1 else ""
-                        terms_link = get_pdf_link_robustly(pdf_extractor, cols[2]) if len(cols) > 2 else ""
-                        business_method_link = get_pdf_link_robustly(pdf_extractor, cols[3]) if len(cols) > 3 else ""
+                        # 상품명은 루프 밖에서 가져온 current_product_name 사용
+                        product_name = current_product_name
+
+                        product_summary_link = ""
+                        terms_link = ""
+                        business_method_link = ""
+
+                        # 링크 추출 (상품요약서, 약관, 사업방법서)
+                        # 각 링크는 <td> 안에 <a> 태그로 존재합니다.
+                        # 정확한 인덱스를 확인해야 합니다.
+                        # 웹사이트 구조에 따라 인덱스가 달라질 수 있습니다.
+                        # 현재 웹사이트 구조를 보면, 판매기간(0), 요약서(1), 약관(2), 사업방법서(3)
+                        if len(cols) > 1:  # 요약서
+                            summary_a = cols[1].find_elements(By.TAG_NAME, "a")
+                            if summary_a and summary_a[0].get_attribute("id"):
+                                summary_id = summary_a[0].get_attribute("id")
+                                summary_xpath = f"//a[@id='{summary_id}']"
+                                product_summary_link = pdf_extractor.extract_pdf_link(None, summary_xpath)  # target_url은 None으로 설정
+                                if not product_summary_link:
+                                    product_summary_link = summary_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                            else:
+                                product_summary_link = summary_a[0].get_attribute("href") if summary_a else ""
+
+                        if len(cols) > 2:  # 약관
+                            terms_a = cols[2].find_elements(By.TAG_NAME, "a")
+                            if terms_a and terms_a[0].get_attribute("id"):
+                                terms_id = terms_a[0].get_attribute("id")
+                                terms_xpath = f"//a[@id='{terms_id}']"
+                                terms_link = pdf_extractor.extract_pdf_link(None, terms_xpath)
+                                if not terms_link:
+                                    terms_link = terms_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                            else:
+                                terms_link = terms_a[0].get_attribute("href") if terms_a else ""
+
+                        if len(cols) > 3:  # 사업방법서
+                            business_a = cols[3].find_elements(By.TAG_NAME, "a")
+                            if business_a and business_a[0].get_attribute("id"):
+                                business_id = business_a[0].get_attribute("id")
+                                business_xpath = f"//a[@id='{business_id}']"
+                                business_method_link = pdf_extractor.extract_pdf_link(None, business_xpath)
+                                if not business_method_link:
+                                    business_method_link = business_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                            else:
+                                business_method_link = business_a[0].get_attribute("href") if business_a else ""
 
                         product_data = {
                             "상품명": product_name,
@@ -170,22 +184,28 @@ def scrape_cardif_data():
                             "사업방법서": business_method_link
                         }
                         all_product_data.append(product_data)
-                        print(f"상품명: {product_name}, 판매기간: {sales_period}")
+                    print("상품명:" + product_name)
+                    print("판매기간:" + sales_period)
 
                 # 특약 정보 스크래핑 시작
                 print(f"상품 '{product_name}'의 특약 정보 수집 중...")
                 try:
+                    # "특약확인" 버튼 클릭
                     spc_button = driver.find_element(By.ID, "spcbtn")
                     spc_button.click()
                     print("특약확인 버튼 클릭 완료.")
 
+                    # 모달창 로드를 기다립니다.
                     selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                         EC.visibility_of_element_located((By.ID, "layer_ty_save"))
                     )
-                    time.sleep(1)
+                    time.sleep(1)  # 모달창 내용 로드 대기
                     print("특약 모달창 로드 완료.")
 
-                    modal_content_div = driver.find_element(By.ID, "claus_tbl")
+                    # 모달창 내 특약 정보 추출
+                    modal_content_div = driver.find_element(By.ID, "claus_tbl")  # 모달창의 스크롤 가능한 내용 영역
+
+                    # 모든 특약 제목과 테이블을 찾습니다.
                     spc_titles = modal_content_div.find_elements(By.ID, "spcProduct_title")
                     spc_tables = modal_content_div.find_elements(By.ID, "spc_tbl")
 
@@ -194,28 +214,49 @@ def scrape_cardif_data():
                         spc_table = spc_tables[i]
 
                         spc_rows = spc_table.find_elements(By.TAG_NAME, "tr")
-                        for spc_row in spc_rows[1:]:
+                        for spc_row in spc_rows[1:]:  # 헤더 제외
                             spc_cols = spc_row.find_elements(By.TAG_NAME, "td")
                             if len(spc_cols) > 0:
                                 spc_sales_period = spc_cols[0].text.strip()
+                                spc_terms_link = ""
+                                spc_business_method_link = ""
 
-                                # 헬퍼 함수를 사용하여 PDF 링크 추출
-                                # get_pdf_link_robustly에서 "javascript:void(0);" 링크를 걸러냄
-                                spc_terms_link = get_pdf_link_robustly(pdf_extractor, spc_cols[1]) if len(spc_cols) > 1 else ""
-                                spc_business_method_link = get_pdf_link_robustly(pdf_extractor, spc_cols[2]) if len(spc_cols) > 2 else ""
+                                if len(spc_cols) > 1:  # 약관
+                                    spc_terms_a = spc_cols[1].find_elements(By.TAG_NAME, "a")
+                                    if spc_terms_a and spc_terms_a[0].get_attribute("id"):
+                                        spc_terms_id = spc_terms_a[0].get_attribute("id")
+                                        spc_terms_xpath = f"//a[@id='{spc_terms_id}']"
+                                        spc_terms_link = pdf_extractor.extract_pdf_link(None, spc_terms_xpath)
+                                        if not spc_terms_link:
+                                            spc_terms_link = spc_terms_a[0].get_attribute("href")
+                                    else:
+                                        spc_terms_link = spc_terms_a[0].get_attribute("href") if spc_terms_a else ""
+
+                                if len(spc_cols) > 2:  # 사업방법서
+                                    spc_business_a = spc_cols[2].find_elements(By.TAG_NAME, "a")
+                                    if spc_business_a and spc_business_a[0].get_attribute("id"):
+                                        spc_business_id = spc_business_a[0].get_attribute("id")
+                                        spc_business_xpath = f"//a[@id='{spc_business_id}']"
+                                        spc_business_method_link = pdf_extractor.extract_pdf_link(None, spc_business_xpath)
+                                        if not spc_business_method_link:
+                                            spc_business_method_link = spc_business_a[0].get_attribute("href")
+                                    else:
+                                        spc_business_method_link = spc_business_a[0].get_attribute("href") if spc_business_a else ""
 
                                 spc_data = {
-                                    "상품명": f"{product_name} - {spc_title}",
+                                    "상품명": f"{product_name} - {spc_title}",  # 주 상품명과 특약명 합치기
                                     "판매기간": spc_sales_period,
                                     "약관": spc_terms_link,
                                     "사업방법서": spc_business_method_link
                                 }
-                                all_product_data.append(spc_data)
+                                all_product_data.append(spc_data)  # 전체 데이터 리스트에 추가
                                 print(f"  특약 '{spc_title}' 데이터 추가: {spc_data}")
 
+                    # 모달창 닫기
                     close_button = driver.find_element(By.CLASS_NAME, "popClose")
                     close_button.click()
                     print("특약 모달창 닫기 완료.")
+                    # 모달창이 사라질 때까지 기다립니다.
                     selenium.webdriver.support.ui.WebDriverWait(driver, 10).until(
                         EC.invisibility_of_element_located((By.ID, "layer_ty_save"))
                     )
@@ -223,6 +264,7 @@ def scrape_cardif_data():
 
                 except Exception as e:
                     print(f"특약 정보 수집 중 오류 발생: {e}")
+                    # 오류 발생 시에도 모달창이 열려 있다면 닫으려고 시도
                     try:
                         close_button = driver.find_element(By.CLASS_NAME, "popClose")
                         if close_button.is_displayed():
@@ -233,9 +275,8 @@ def scrape_cardif_data():
                             print("오류 후 특약 모달창 닫기 완료.")
                     except Exception as inner_e:
                         print(f"모달창 닫기 중 오류 발생: {inner_e}")
-                        pass
-
-        # 데이터베이스 저장 로직
+                        pass  # 닫기 버튼을 찾을 수 없거나 이미 닫혀 있는 경우
+        # 데이터베이스 저장 로직 추가
         if DatabaseManager and all_product_data:
             structured_rows_for_db = []
             company_name = "BNP파리바 카디프생명"
@@ -244,35 +285,28 @@ def scrape_cardif_data():
             for item in all_product_data:
                 product_name = item.get("상품명", "")
                 sales_period = item.get("판매기간", "")
-                product_code = None
+                product_code = None  # 현재 스크랩되는 정보에 없으므로 빈 문자열로 처리
 
-                # 각 문서 유형별로 데이터 추가 (링크가 빈 문자열이 아닌 경우에만 추가)
-                if item.get("상품요약서"):  # get_pdf_link_robustly에서 이미 필터링되므로, 이 조건은 유효한 링크만 통과시킴
-                    link = item["상품요약서"]
-                    if link:  # 빈 문자열이 아닌지 최종 확인
-                        structured_rows_for_db.append((
-                            company_name, product_name, product_code,
-                            "상품요약서", sales_period, scraped_at, link
-                        ))
-                if item.get("약관"):
-                    link = item["약관"]
-                    if link:
-                        structured_rows_for_db.append((
-                            company_name, product_name, product_code,
-                            "약관", sales_period, scraped_at, link
-                        ))
-                if item.get("사업방법서"):
-                    link = item["사업방법서"]
-                    if link:
-                        structured_rows_for_db.append((
-                            company_name, product_name, product_code,
-                            "사업방법서", sales_period, scraped_at, link
-                        ))
+                # 각 문서 유형별로 데이터 추가
+                if item.get("상품요약서") and item["상품요약서"] != "javascript:void(0)":
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "상품요약서", sales_period, scraped_at, item["상품요약서"]
+                    ))
+                if item.get("약관") and item["약관"] != "javascript:void(0)":
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "약관", sales_period, scraped_at, item["약관"]
+                    ))
+                if item.get("사업방법서") and item["사업방법서"] != "javascript:void(0)":
+                    structured_rows_for_db.append((
+                        company_name, product_name, product_code,
+                        "사업방법서", sales_period, scraped_at, item["사업방법서"]
+                    ))
 
             if structured_rows_for_db:
                 with DatabaseManager() as db_manager:
                     db_manager.save_data(structured_rows_for_db)
-                print(f"총 {len(structured_rows_for_db)}개의 데이터를 데이터베이스에 저장 완료.")
             else:
                 print("데이터베이스에 저장할 데이터가 없습니다.")
         else:
@@ -281,22 +315,18 @@ def scrape_cardif_data():
         return all_product_data
 
     except Exception as e:
-        print(f"최상위 오류 발생: {e}")
+        print(f"오류 발생: {e}")
         return None
     finally:
         if driver:
-            print("WebDriver를 닫는 중입니다...")
             driver.quit()
-            print("WebDriver가 닫혔습니다.")
 
 
 if __name__ == "__main__":
     data = scrape_cardif_data()
     if data:
         print("\n--- 스크랩된 모든 데이터 ---")
-        # JSON 파일로 저장 (한글 깨짐 방지)
-        with open("cardif_product_data.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        print("\n데이터가 cardif_product_data.json 파일에 저장되었습니다.")
+        for item in data:
+            print(item)
     else:
         print("데이터를 가져오는 데 실패했습니다.")
