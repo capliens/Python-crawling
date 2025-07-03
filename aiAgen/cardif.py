@@ -151,8 +151,12 @@ def scrape_cardif_data():
                                 product_summary_link = pdf_extractor.extract_pdf_link(None, summary_xpath)  # target_url은 None으로 설정
                                 if not product_summary_link:
                                     product_summary_link = summary_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                                if product_summary_link == "javascript:void(0)":
+                                    product_summary_link = ""
                             else:
                                 product_summary_link = summary_a[0].get_attribute("href") if summary_a else ""
+                                if product_summary_link == "javascript:void(0)":
+                                    product_summary_link = ""
 
                         if len(cols) > 2:  # 약관
                             terms_a = cols[2].find_elements(By.TAG_NAME, "a")
@@ -162,8 +166,12 @@ def scrape_cardif_data():
                                 terms_link = pdf_extractor.extract_pdf_link(None, terms_xpath)
                                 if not terms_link:
                                     terms_link = terms_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                                if terms_link == "javascript:void(0)":
+                                    terms_link = ""
                             else:
                                 terms_link = terms_a[0].get_attribute("href") if terms_a else ""
+                                if terms_link == "javascript:void(0)":
+                                    terms_link = ""
 
                         if len(cols) > 3:  # 사업방법서
                             business_a = cols[3].find_elements(By.TAG_NAME, "a")
@@ -173,8 +181,12 @@ def scrape_cardif_data():
                                 business_method_link = pdf_extractor.extract_pdf_link(None, business_xpath)
                                 if not business_method_link:
                                     business_method_link = business_a[0].get_attribute("href")  # 실패 시 기존 href 사용
+                                if business_method_link == "javascript:void(0)":
+                                    business_method_link = ""
                             else:
                                 business_method_link = business_a[0].get_attribute("href") if business_a else ""
+                                if business_method_link == "javascript:void(0)":
+                                    business_method_link = ""
 
                         product_data = {
                             "상품명": product_name,
@@ -229,8 +241,12 @@ def scrape_cardif_data():
                                         spc_terms_link = pdf_extractor.extract_pdf_link(None, spc_terms_xpath)
                                         if not spc_terms_link:
                                             spc_terms_link = spc_terms_a[0].get_attribute("href")
+                                        if spc_terms_link == "javascript:void(0)":
+                                            spc_terms_link = ""
                                     else:
                                         spc_terms_link = spc_terms_a[0].get_attribute("href") if spc_terms_a else ""
+                                        if spc_terms_link == "javascript:void(0)":
+                                            spc_terms_link = ""
 
                                 if len(spc_cols) > 2:  # 사업방법서
                                     spc_business_a = spc_cols[2].find_elements(By.TAG_NAME, "a")
@@ -240,8 +256,12 @@ def scrape_cardif_data():
                                         spc_business_method_link = pdf_extractor.extract_pdf_link(None, spc_business_xpath)
                                         if not spc_business_method_link:
                                             spc_business_method_link = spc_business_a[0].get_attribute("href")
+                                        if spc_business_method_link == "javascript:void(0)":
+                                            spc_business_method_link = ""
                                     else:
                                         spc_business_method_link = spc_business_a[0].get_attribute("href") if spc_business_a else ""
+                                        if spc_business_method_link == "javascript:void(0)":
+                                            spc_business_method_link = ""
 
                                 spc_data = {
                                     "상품명": f"{product_name} - {spc_title}",  # 주 상품명과 특약명 합치기
