@@ -1,5 +1,4 @@
-# im라이프/판매중단페이지/db확인
-# 코드 수정/클릭오류
+# im라이프/판매중단페이지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -129,7 +128,31 @@ def get_product_info(url):
                             if summary_link_href and "javascript" not in summary_link_href:
                                 summary_link = summary_link_href
                             else:
-                                extracted_link = pdf_extractor.click_and_get_download_link(summary_a_tag)
+                                # WebElement의 XPath를 동적으로 가져오는 JavaScript 함수
+                                get_xpath_script = """
+                                function getXPath(element) {
+                                    if (element.id !== '') {
+                                        return '//*[@id="' + element.id + '"]';
+                                    }
+                                    if (element === document.body) {
+                                        return '/html/body';
+                                    }
+                                    var ix = 0;
+                                    var siblings = element.parentNode.childNodes;
+                                    for (var i = 0; i < siblings.length; i++) {
+                                        var sibling = siblings[i];
+                                        if (sibling === element) {
+                                            return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                                        }
+                                        if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+                                            ix++;
+                                        }
+                                    }
+                                }
+                                return getXPath(arguments[0]);
+                                """
+                                summary_xpath = driver.execute_script(get_xpath_script, summary_a_tag)
+                                extracted_link = pdf_extractor.click_and_get_download_link(summary_xpath)
                                 if extracted_link:
                                     summary_link = extracted_link
                         except NoSuchElementException:
@@ -143,7 +166,30 @@ def get_product_info(url):
                             if business_method_link_href and "javascript" not in business_method_link_href:
                                 business_method_link = business_method_link_href
                             else:
-                                extracted_link = pdf_extractor.click_and_get_download_link(business_method_a_tag)
+                                get_xpath_script = """
+                                function getXPath(element) {
+                                    if (element.id !== '') {
+                                        return '//*[@id="' + element.id + '"]';
+                                    }
+                                    if (element === document.body) {
+                                        return '/html/body';
+                                    }
+                                    var ix = 0;
+                                    var siblings = element.parentNode.childNodes;
+                                    for (var i = 0; i < siblings.length; i++) {
+                                        var sibling = siblings[i];
+                                        if (sibling === element) {
+                                            return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                                        }
+                                        if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+                                            ix++;
+                                        }
+                                    }
+                                }
+                                return getXPath(arguments[0]);
+                                """
+                                business_method_xpath = driver.execute_script(get_xpath_script, business_method_a_tag)
+                                extracted_link = pdf_extractor.click_and_get_download_link(business_method_xpath)
                                 if extracted_link:
                                     business_method_link = extracted_link
                         except NoSuchElementException:
@@ -157,7 +203,30 @@ def get_product_info(url):
                             if terms_link_href and "javascript" not in terms_link_href:
                                 terms_link = terms_link_href
                             else:
-                                extracted_link = pdf_extractor.click_and_get_download_link(terms_a_tag)
+                                get_xpath_script = """
+                                function getXPath(element) {
+                                    if (element.id !== '') {
+                                        return '//*[@id="' + element.id + '"]';
+                                    }
+                                    if (element === document.body) {
+                                        return '/html/body';
+                                    }
+                                    var ix = 0;
+                                    var siblings = element.parentNode.childNodes;
+                                    for (var i = 0; i < siblings.length; i++) {
+                                        var sibling = siblings[i];
+                                        if (sibling === element) {
+                                            return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                                        }
+                                        if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+                                            ix++;
+                                        }
+                                    }
+                                }
+                                return getXPath(arguments[0]);
+                                """
+                                terms_xpath = driver.execute_script(get_xpath_script, terms_a_tag)
+                                extracted_link = pdf_extractor.click_and_get_download_link(terms_xpath)
                                 if extracted_link:
                                     terms_link = extracted_link
                         except NoSuchElementException:
