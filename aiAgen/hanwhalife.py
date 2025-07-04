@@ -1,5 +1,4 @@
-# 한화 생명 /db 확인
-# 코드 수정
+# 한화 생명 /저장이상없음
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -339,6 +338,14 @@ def get_hanwhalife_product_info_selenium():
         "download.directory_upgrade": True,
         "plugins.always_open_pdf_externally": True  # PDF를 브라우저 내에서 열지 않고 다운로드
     }
+    options.add_experimental_option(
+        "prefs", {
+            **prefs,  # 기존 prefs 설정을 유지하면서
+            "profile.content_settings.exceptions.automatic_downloads.*,*.": {
+                "setting": 1  # 1은 허용 (Allow), 2는 차단 (Block)
+            }
+        }
+    )
     options.add_experimental_option("prefs", prefs)
     # options.set_capability("goog:loggingPrefs", {"performance": "ALL"}) # seleniumwire 제거로 인한 주석 처리
 
