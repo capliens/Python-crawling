@@ -58,7 +58,7 @@ def get_chubblife_product_info():
     # products_data = [] # 더 이상 리스트에 저장하지 않고 DB에 직접 저장
 
     # DatabaseManager 인스턴스 생성
-    db_name = os.path.join(project_root, "insurance_products.db")  # 프로젝트 루트에 DB 파일 생성
+    db_name = os.path.join(project_root, "chubb_web_data.db")  # 프로젝트 루트에 DB 파일 생성
     db_manager = DatabaseManager(db_name=db_name)
 
     try:
@@ -514,4 +514,4 @@ if __name__ == '__main__':
 
     get_chubblife_product_info()
 
-    print("Chubb Life 상품 정보 스크래핑 완료. 데이터는 'insurance_products.db'에 저장되었습니다.")
+    print("Chubb Life 상품 정보 스크래핑 완료. 데이터는 'chubb_web_data..db'에 저장되었습니다.")

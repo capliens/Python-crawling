@@ -1,5 +1,4 @@
-# 매트라이프 /db 확인 /판매중단패이지/db저장 이슈
-# 코드 수정
+# 매트라이프 /판매중단패이지
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -33,7 +32,7 @@ if not os.path.exists(METLIFE_DOWNLOAD_DIR):
 
 def get_metlife_product_info(scrape_target="주보험", click_all_history=False):
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
+    # options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
 
@@ -234,7 +233,7 @@ if __name__ == '__main__':
                     structured_rows_to_save.extend(current_product_docs)
 
             if structured_rows_to_save:
-                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                with DatabaseManager(db_name="metlife_web_data.db") as db_manager:
                     saved_count = db_manager.save_data(structured_rows_to_save)
                 print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
             else:

@@ -1,4 +1,4 @@
-# 롯데손해보험/판매중지페이지/db확인
+# 롯데손해보험/판매중지페이지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options

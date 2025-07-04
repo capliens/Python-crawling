@@ -1,4 +1,4 @@
-# nh농협생명/DB확인
+# nh농협생명
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
