@@ -1,4 +1,4 @@
-# 미래에셋생명 상품 /판매 중단/DB확인
+# 미래에셋생명 상품 /판매 중단/테이블이슈 판매중이아니라 날짜만 가져오기
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait

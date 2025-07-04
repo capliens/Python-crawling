@@ -1,5 +1,5 @@
 # im라이프/판매중단페이지/db확인
-# 코드 수정
+# 코드 수정/클릭오류
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options

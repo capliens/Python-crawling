@@ -1,4 +1,4 @@
-# 신한EZ손해보험/db확인
+# 신한EZ손해보험/db확인/인식문제로 가져오지를 못함
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options

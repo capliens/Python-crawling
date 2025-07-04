@@ -1,5 +1,5 @@
 # NH농협손해/판매중지 페이지/db확인/pdf가져오기 오류
-# 코드수정
+# 클릭이슈
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
