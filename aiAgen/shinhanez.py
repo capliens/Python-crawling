@@ -1,4 +1,4 @@
-# 신한EZ손해보험/db확인/인식문제로 가져오지를 못함
+# 신한EZ손해보험/db확인/없을때 느려짐
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -199,45 +199,45 @@ def scrape_complex_insurance_products_final_with_logs(url):
 
                                 download_button_xpath_prefix = (
                                     f"{container_xpath}/table/tbody[@data-eid='prdList']/"
-                                    f"tr[td/a[@data-bind='salePrdNmDepth2'][@data-value='{sp_data_value}']]/"
+                                    f"tr[1]/"
                                     f"td[@class='btn-col']/div[@data-bind='salePrdNmDepth3']/"
                                 )
 
                                 if pdf_extractor:
-                                    summary_button_xpath = f"{download_button_xpath_prefix}button[@title='상품요약']"
-                                    print(f"      '상품요약' 버튼 XPath: {summary_button_xpath}")
+                                    summary_button_xpath = download_button_xpath_prefix + "button[@title='상품요약']"
+                                    print("      '상품요약' 버튼 XPath:", summary_button_xpath)
                                     # current_page_url 인자 제거
                                     summary_pdf_path = pdf_extractor.click_and_get_download_link(summary_button_xpath)
                                     if summary_pdf_path:
                                         download_links_status["상품요약"] = True
                                         downloaded_pdf_paths["상품요약"] = summary_pdf_path
-                                        print(f"        '상품요약' PDF 다운로드/링크 성공: {summary_pdf_path}")
+                                        print("        '상품요약' PDF 다운로드/링크 성공: {}".format(summary_pdf_path))
                                     else:
-                                        print(f"        '상품요약' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                        print("        '상품요약' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     time.sleep(0.5)
 
-                                    terms_button_xpath = f"{download_button_xpath_prefix}button[@title='약관']"
-                                    print(f"      '약관' 버튼 XPath: {terms_button_xpath}")
+                                    terms_button_xpath = download_button_xpath_prefix + "button[@title='약관']"
+                                    print("      '약관' 버튼 XPath:", terms_button_xpath)
                                     # current_page_url 인자 제거
                                     terms_pdf_path = pdf_extractor.click_and_get_download_link(terms_button_xpath)
                                     if terms_pdf_path:
                                         download_links_status["약관"] = True
                                         downloaded_pdf_paths["약관"] = terms_pdf_path
-                                        print(f"        '약관' PDF 다운로드/링크 성공: {terms_pdf_path}")
+                                        print("        '약관' PDF 다운로드/링크 성공: {}".format(terms_pdf_path))
                                     else:
-                                        print(f"        '약관' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                        print("        '약관' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     time.sleep(0.5)
 
-                                    business_method_button_xpath = f"{download_button_xpath_prefix}button[@title='사업방법서']"
-                                    print(f"      '사업방법서' 버튼 XPath: {business_method_button_xpath}")
+                                    business_method_button_xpath = download_button_xpath_prefix + "button[@title='사업방법서']"
+                                    print("      '사업방법서' 버튼 XPath:", business_method_button_xpath)
                                     # current_page_url 인자 제거
                                     business_method_pdf_path = pdf_extractor.click_and_get_download_link(business_method_button_xpath)
                                     if business_method_pdf_path:
                                         download_links_status["사업방법서"] = True
                                         downloaded_pdf_paths["사업방법서"] = business_method_pdf_path
-                                        print(f"        '사업방법서' PDF 다운로드/링크 성공: {business_method_pdf_path}")
+                                        print("        '사업방법서' PDF 다운로드/링크 성공: {}".format(business_method_pdf_path))
                                     else:
-                                        print(f"        '사업방법서' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                        print("        '사업방법서' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     time.sleep(0.5)
                                 else:
                                     print("    PdfLinkExtractor가 초기화되지 않아 PDF 다운로드 시도 건너뜀.")

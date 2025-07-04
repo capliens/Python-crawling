@@ -200,7 +200,7 @@ class PdfLinkExtractor:
 
         # 다운로드 완료를 기다립니다.
         start_time = time.time()
-        download_check_timeout = 60  # 다운로드 대기 시간 (초)
+        download_check_timeout = 120  # 다운로드 대기 시간 (초)를 120초로 늘림
         check_interval = 1  # 파일 존재 여부 확인 간격 (초)
 
         while time.time() - start_time < download_check_timeout:
@@ -210,7 +210,8 @@ class PdfLinkExtractor:
             for f in new_files:
                 file_path = os.path.join(self.download_dir, f)
                 # PDF 파일이고, 다운로드가 완료된 것으로 보이는지 확인 (예: .crdownload 확장자가 없는지)
-                if f.lower().endswith(".pdf") and not f.endswith(".crdownload"):
+                # 추가: 파일 크기가 0보다 큰지 확인
+                if f.lower().endswith(".pdf") and not f.endswith(".crdownload") and os.path.getsize(file_path) > 0:
                     print(f"  [Download Link] 로컬 다운로드 감지 성공: {file_path}")
                     return file_path
             time.sleep(check_interval)

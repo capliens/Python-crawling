@@ -1,4 +1,8 @@
-# 미래에셋생명 상품 /판매 중단/테이블이슈 판매중이아니라 날짜만 가져오기
+# 미래에셋생명 상품 /판매 중단/링크에서 null문제 파일 반환 주소반환 문제인듯/수정후 db확인
+# 경로?
+# https://life.miraeasset.com/micro/cmmnFileDown.do?pathType=gongci_u1&fileName=미래에셋생명 변액연금보험 무배당 미래를 응원해_약관_20250401.pdf&orgFileName=미래에셋생명 변액연금보험 무배당 미래를 응원해_약관_20250401.pdf&filePath=/uploadwas/life//html/gongci/upload/1/
+
+# https://life.miraeasset.com/micro/cmmnFileDown.do?pathType=gongci_u1&fileName=미래에셋생명 변액연금보험 무배당 미래를 부탁해_약관_20241001.pdf &orgFileName=미래에셋생명 변액연금보험 무배당 미래를 부탁해_약관_20241001.pdf다운&filePath=/uploadwas/life//html/gongci/upload/1/
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,6 +14,7 @@ import traceback
 import os
 import sys
 from datetime import datetime  # datetime 모듈 추가
+from selenium.common.exceptions import NoAlertPresentException  # NoAlertPresentException import 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -26,6 +31,17 @@ except ImportError as e:
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "miraeasset")  # 다운로드 폴더명 구체화
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
+
+
+def handle_alert(driver):
+    try:
+        alert = driver.switch_to.alert
+        print(f"알림창 감지: {alert.text}")
+        alert.accept()  # 알림창 확인 (OK)
+        print("알림창 닫기 완료.")
+        return True
+    except NoAlertPresentException:
+        return False
 
 
 def get_miraeasset_product_info():
@@ -60,6 +76,7 @@ def get_miraeasset_product_info():
         driver.get(url)
         print(f"페이지 접속 완료: {url}")
         time.sleep(3)
+        # handle_alert(driver)  # 페이지 로드 후 알림창 처리 (사용자 피드백에 따라 제거)
 
         # "더보기" 버튼 로직
         more_button_selector = "div#btn-div > button#selectAddList"
@@ -80,6 +97,7 @@ def get_miraeasset_product_info():
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", more_button)
                 time.sleep(0.5)
                 driver.execute_script("arguments[0].click();", more_button)
+                # handle_alert(driver)  # 버튼 클릭 후 알림창 처리 (사용자 피드백에 따라 제거)
                 time.sleep(2.5)  # 데이터 로드 대기
             except Exception as e_click:
                 print(f"'더보기' 버튼 처리 중 예외 발생 또는 더 이상 없음: {e_click}")
@@ -93,6 +111,7 @@ def get_miraeasset_product_info():
         print(f"총 {len(rows)}개의 행을 찾았습니다.")
 
         current_product_name = "N/A"
+        last_valid_sales_period = "N/A"  # 이전 행의 유효한 판매기간을 저장
 
         for i, row in enumerate(rows):
             th_cells = row.find_elements(By.TAG_NAME, "th")
@@ -102,70 +121,99 @@ def get_miraeasset_product_info():
             if th_cells and th_cells[0].get_attribute("rowspan"):
                 current_product_name = th_cells[0].text.strip()
 
-            # td_cells[0] = 판매기간
-            # td_cells[1] = 상품요약서
-            # td_cells[2] = 약관
-            # td_cells[3] = 사업방법서
-            # (사용자 설명: 테이블상 3번째부터 판매기간... -> th가 첫번째 열, td[0]이 두번째 열(판매기간)일 가능성)
-            # td_cells의 실제 개수와 내용을 기준으로 인덱싱해야 함.
-            # 제공된 HTML 예시에서는 th가 첫번째 열, 그 다음 td들이 데이터.
-            # 따라서 td_cells[0]이 판매기간, td_cells[1]이 요약서...
+            sales_period = "N/A"
+            summary_links_idx = -1
+            terms_links_idx = -1
+            bm_links_idx = -1
 
-            if td_cells:  # 데이터 td가 있는 경우에만 처리
-                sales_period = "N/A"
+            if td_cells:
+                first_td_text = td_cells[0].text.strip()
+
+                # td_cells[0]이 '상태' 컬럼인지 판단
+                is_status_td_first = False
+                if "판매중" in first_td_text or "판매종료" in first_td_text:
+                    is_status_td_first = True
+
+                if is_status_td_first:
+                    # td_cells[0]이 상태 컬럼인 경우, 판매기간은 td_cells[1]
+                    if len(td_cells) > 1:
+                        raw_sales_period = td_cells[1].text.strip()
+                        if "판매중" in raw_sales_period or "판매종료" in raw_sales_period:
+                            sales_period = ""  # 판매기간에 상태 텍스트가 또 있다면 빈 문자열
+                        else:
+                            sales_period = raw_sales_period
+                    else:
+                        sales_period = ""  # 판매기간 td가 없는 경우
+                    summary_links_idx = 2  # 요약서는 td_cells[2]
+                else:
+                    # td_cells[0]이 판매기간 컬럼인 경우 (상태 컬럼이 rowspan으로 생략된 경우)
+                    sales_period = first_td_text
+                    summary_links_idx = 1  # 요약서는 td_cells[1]
+
+                # 판매기간에 "판매중" 또는 "판매종료" 텍스트가 들어가지 않도록 최종 필터링
+                if "판매중" in sales_period or "판매종료" in sales_period:
+                    sales_period = ""
+
+                # 현재 행에서 유효한 sales_period를 찾았다면 업데이트
+                if sales_period != "":
+                    last_valid_sales_period = sales_period
+                else:
+                    # 현재 행에서 sales_period를 찾지 못했다면, 이전 유효값 사용
+                    sales_period = last_valid_sales_period
+
+                # 나머지 링크 인덱스 설정
+                terms_links_idx = summary_links_idx + 1
+                bm_links_idx = terms_links_idx + 1
+
+                # 상품요약서 (summary_links_idx)
                 summary_link = "N/A"
-                terms_link = "N/A"
-                business_manual_link = "N/A"
-
-                # 판매기간 (첫 번째 td)
-                if len(td_cells) > 0:
-                    sales_period = td_cells[0].text.strip()
-
-                # 상품요약서 (두 번째 td)
-                if len(td_cells) > 1:
-                    summary_links = td_cells[1].find_elements(By.TAG_NAME, "a")
+                if len(td_cells) > summary_links_idx:
+                    summary_links = td_cells[summary_links_idx].find_elements(By.TAG_NAME, "a")
                     summary_link = summary_links[0].get_attribute('href') if summary_links else "N/A"
 
-                # 약관 (세 번째 td)
-                if len(td_cells) > 2:
-                    terms_links_elements = td_cells[2].find_elements(By.TAG_NAME, "a")
+                # 약관 (terms_links_idx)
+                terms_link = "N/A"
+                if len(td_cells) > terms_links_idx:
+                    terms_links_elements = td_cells[terms_links_idx].find_elements(By.TAG_NAME, "a")
                     terms_link_list = [link.get_attribute('href') for link in terms_links_elements if link.is_displayed()]
                     terms_link = ", ".join(terms_link_list) if terms_link_list else "N/A"
 
-                # 사업방법서 (네 번째 td)
-                if len(td_cells) > 3:
-                    bm_links = td_cells[3].find_elements(By.TAG_NAME, "a")
+                # 사업방법서 (bm_links_idx)
+                business_manual_link = "N/A"
+                if len(td_cells) > bm_links_idx:
+                    bm_links = td_cells[bm_links_idx].find_elements(By.TAG_NAME, "a")
                     business_manual_link = bm_links[0].get_attribute('href') if bm_links else "N/A"
 
+                # PDF 링크 추출 로직도 인덱스 조정 필요
+                pdf_extractor = PdfLinkExtractor(driver, DOWNLOAD_DIR, verify_url_liveness=True)
+                extracted_summary_pdf_link = "N/A"
+                if summary_link and summary_link != "N/A" and summary_links:
+                    summary_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{summary_links_idx + 1}]/a[1]"
+                    extracted_summary_pdf_link = pdf_extractor.click_and_get_download_link(summary_xpath)
+                    handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
+
+                extracted_terms_pdf_links = []
+                if terms_link and terms_link != "N/A" and terms_links_elements:
+                    for k, link_element in enumerate(terms_links_elements):
+                        if link_element.is_displayed():
+                            term_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{terms_links_idx + 1}]/a[{k + 1}]"
+                            extracted_terms_pdf_links.append(pdf_extractor.click_and_get_download_link(term_xpath))
+                            handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
+                extracted_terms_pdf_link = (
+                    ", ".join([pdf_link for pdf_link in extracted_terms_pdf_links if pdf_link is not None and pdf_link != "N/A" and pdf_link.strip() != ""])
+                    if extracted_terms_pdf_links else "N/A"
+                )
+
+                extracted_business_manual_pdf_link = "N/A"
+                if business_manual_link and business_manual_link != "N/A" and bm_links:
+                    bm_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{bm_links_idx + 1}]/a[1]"
+                    extracted_business_manual_pdf_link = pdf_extractor.click_and_get_download_link(bm_xpath)
+                    handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
+
                 # 판매기간 정보가 있는 행만 유효한 데이터로 간주 (상품명만 있는 행 제외)
+                # sales_period가 빈 문자열이거나 N/A가 아닌 경우에만 저장
                 if sales_period != "N/A" and sales_period.strip() != "":
-                    # PDF 링크 추출
-                    pdf_extractor = PdfLinkExtractor(driver, DOWNLOAD_DIR, verify_url_liveness=False)
-                    # summary_link에 대한 XPath 생성 및 전달
-                    extracted_summary_pdf_link = "N/A"
-                    if summary_link != "N/A" and summary_links:  # summary_links가 비어있지 않은지 확인
-                        summary_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[2]/a[1]"
-                        extracted_summary_pdf_link = pdf_extractor.click_and_get_download_link(summary_xpath)
-
-                    # terms_link에 대한 XPath 생성 및 전달
-                    extracted_terms_pdf_links = []
-                    if terms_link != "N/A" and terms_links_elements:  # terms_links_elements가 비어있지 않은지 확인
-                        for k, link_element in enumerate(terms_links_elements):
-                            if link_element.is_displayed():  # is_displayed() 조건 유지
-                                term_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[3]/a[{k + 1}]"
-                                extracted_terms_pdf_links.append(pdf_extractor.click_and_get_download_link(term_xpath))
-                    extracted_terms_pdf_link = (
-                        ", ".join([pdf_link for pdf_link in extracted_terms_pdf_links if pdf_link is not None and pdf_link != "N/A"])
-                        if extracted_terms_pdf_links else "N/A"
-                    )
-
-                    # business_manual_link에 대한 XPath 생성 및 전달
-                    extracted_business_manual_pdf_link = "N/A"
-                    if business_manual_link != "N/A" and bm_links:  # bm_links가 비어있지 않은지 확인
-                        bm_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[4]/a[1]"
-                        extracted_business_manual_pdf_link = pdf_extractor.click_and_get_download_link(bm_xpath)
-
-                    products_data.append({
+                    product_data_row = {
                         "product_name": current_product_name,
                         "sales_period": sales_period,
                         "summary_link": summary_link,
@@ -174,10 +222,19 @@ def get_miraeasset_product_info():
                         "extracted_summary_pdf_link": extracted_summary_pdf_link,
                         "extracted_terms_pdf_link": extracted_terms_pdf_link,
                         "extracted_business_manual_pdf_link": extracted_business_manual_pdf_link
-                    })
-            # else:
-                # th만 있고 td가 없는 행 (예: 상품명만 있는 첫 행의 일부)은 이미 current_product_name만 업데이트하고 넘어감.
-                # print(f"행 {i}: td 셀이 없습니다.")
+                    }
+                    # 추출된 PDF 링크가 유효한 경우에만 products_data에 추가
+                    if (extracted_summary_pdf_link not in ["N/A", None, ""]
+                        or extracted_terms_pdf_link not in ["N/A", None, ""]
+                            or extracted_business_manual_pdf_link not in ["N/A", None, ""]):
+                        products_data.append(product_data_row)
+            else:
+                # td_cells가 없는 행 (rowspan으로 인해 모든 td가 생략된 행) 처리
+                # 이 경우, 이전 행의 current_product_name과 last_valid_sales_period를 사용하여 데이터 생성
+                # 링크 정보는 N/A로 처리
+                if current_product_name != "N/A" and last_valid_sales_period != "N/A":
+                    # 이 경우 추출된 PDF 링크는 N/A이므로, DB에 저장하지 않음
+                    pass  # 이 부분은 이미 링크가 N/A이므로 저장하지 않음
 
         if not products_data:
             print("데이터를 찾지 못했습니다. HTML 구조 및 선택자를 다시 확인해야 합니다.")
