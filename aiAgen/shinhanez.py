@@ -1,4 +1,4 @@
-# 신한EZ손해보험/db확인/없을때 느려짐
+# 신한EZ손해보험/db확인/판매중지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -10,7 +10,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
-from datetime import datetime  # datetime import 활성화
+from datetime import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -18,10 +18,10 @@ if project_root not in sys.path:
 
 try:
     from neoali.pdf_link_scraper import PdfLinkExtractor
-    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+    from neoali.DB_save import DatabaseManager
 except ImportError as e:
     PdfLinkExtractor = None
-    DatabaseManager = None  # DatabaseManager 초기화 추가
+    DatabaseManager = None
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "shinhanez")
@@ -29,8 +29,6 @@ if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
 # --- Chrome 다운로드 옵션 설정 함수 ---
-
-
 def set_chrome_download_options(options, download_dir):
     prefs = {
         "download.default_directory": download_dir,
@@ -90,7 +88,6 @@ def scrape_complex_insurance_products_final_with_logs(url):
                     EC.presence_of_element_located((By.XPATH, container_xpath))
                 )
 
-                # tbody를 찾을 때 table 태그를 추가합니다.
                 tbody_element = current_container_div.find_element(By.XPATH, "./table/tbody[@data-eid='prdList']")
                 print(f"  {container_idx + 1}번째 컨테이너 내에서 table/tbody[@data-eid='prdList']를 찾았습니다.")
 
@@ -129,26 +126,17 @@ def scrape_complex_insurance_products_final_with_logs(url):
                         current_tbody_element = WebDriverWait(driver, 5).until(
                             EC.presence_of_element_located((By.XPATH, f"{container_xpath}/table/tbody[@data-eid='prdList']"))
                         )
-                        all_trs_in_tbody = current_tbody_element.find_elements(By.XPATH, "./tr")
+                        
+                        sales_period_elements = current_tbody_element.find_elements(By.XPATH, "./tr/td[2]/a[@data-bind='salePrdNmDepth2']")
 
-                        for tr_idx_for_sp, current_tr_element in enumerate(all_trs_in_tbody):
-                            sales_period_xpath_in_tr = (
-                                f"{container_xpath}/table/tbody[@data-eid='prdList']/tr[{tr_idx_for_sp + 1}]/"
-                                f"td[2]/a[@data-bind='salePrdNmDepth2']"
-                            )
-                            try:
-                                sp_elem = WebDriverWait(driver, 1).until(
-                                    EC.visibility_of_element_located((By.XPATH, sales_period_xpath_in_tr))
-                                )
-                                if sp_elem.text.strip():
-                                    sales_period_info_list.append({
-                                        "text": sp_elem.text.strip(),
-                                        "data_value": sp_elem.get_attribute("data-value"),
-                                        "data_index_number": sp_elem.get_attribute("data-index-number"),
-                                        "origin_tr_index": tr_idx_for_sp + 1
-                                    })
-                            except (TimeoutException, NoSuchElementException):
-                                pass
+                        for sp_elem in sales_period_elements:
+                            if sp_elem.text.strip():
+                                sales_period_info_list.append({
+                                    "text": sp_elem.text.strip(),
+                                    "data_value": sp_elem.get_attribute("data-value"),
+                                    "data_index_number": sp_elem.get_attribute("data-index-number"),
+                                    "element": sp_elem
+                                })
 
                         if not sales_period_info_list:
                             print(f"  상품 '{product_name}'에 대한 유효한 판매 기간을 여러 TR에서 찾을 수 없습니다.")
@@ -168,9 +156,9 @@ def scrape_complex_insurance_products_final_with_logs(url):
                         for sp_info in sales_period_info_list:
                             sales_period_text = sp_info["text"]
                             sp_data_value = sp_info["data_value"]
-                            origin_tr_index_for_sp = sp_info["origin_tr_index"]
+                            current_sales_period_element = sp_info["element"]
 
-                            print(f"    --- 판매 기간 클릭 시도 (JS): {sales_period_text} (상품: {product_name}, 발견 TR: {origin_tr_index_for_sp}) ---")
+                            print(f"    --- 판매 기간 클릭 시도 (JS): {sales_period_text} (상품: {product_name}) ---")
 
                             download_links_status = {
                                 "상품요약": False,
@@ -184,14 +172,6 @@ def scrape_complex_insurance_products_final_with_logs(url):
                             }
 
                             try:
-                                sales_period_link_xpath_to_click = (
-                                    f"{container_xpath}/table/tbody[@data-eid='prdList']/tr[{origin_tr_index_for_sp}]/"
-                                    f"td[2]/a[@data-bind='salePrdNmDepth2'][@data-value='{sp_data_value}']"
-                                )
-                                current_sales_period_element = WebDriverWait(driver, 10).until(
-                                    EC.element_to_be_clickable((By.XPATH, sales_period_link_xpath_to_click))
-                                )
-
                                 parent_td_sp = current_sales_period_element.find_element(By.XPATH, '..')
                                 if 'is-active' not in parent_td_sp.get_attribute('class'):
                                     driver.execute_script("arguments[0].click();", current_sales_period_element)
@@ -204,40 +184,58 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                 )
 
                                 if pdf_extractor:
+                                    # 상품요약 버튼 확인 및 클릭 시도
                                     summary_button_xpath = download_button_xpath_prefix + "button[@title='상품요약']"
                                     print("      '상품요약' 버튼 XPath:", summary_button_xpath)
-                                    # current_page_url 인자 제거
-                                    summary_pdf_path = pdf_extractor.click_and_get_download_link(summary_button_xpath)
-                                    if summary_pdf_path:
-                                        download_links_status["상품요약"] = True
-                                        downloaded_pdf_paths["상품요약"] = summary_pdf_path
-                                        print("        '상품요약' PDF 다운로드/링크 성공: {}".format(summary_pdf_path))
-                                    else:
-                                        print("        '상품요약' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    try:
+                                        WebDriverWait(driver, 2).until(
+                                            EC.element_to_be_clickable((By.XPATH, summary_button_xpath))
+                                        )
+                                        summary_pdf_path = pdf_extractor.click_and_get_download_link(summary_button_xpath)
+                                        if summary_pdf_path:
+                                            download_links_status["상품요약"] = True
+                                            downloaded_pdf_paths["상품요약"] = summary_pdf_path
+                                            print("        '상품요약' PDF 다운로드/링크 성공: {}".format(summary_pdf_path))
+                                        else:
+                                            print("        '상품요약' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    except TimeoutException:
+                                        print("        '상품요약' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
 
+                                    # 약관 버튼 확인 및 클릭 시도
                                     terms_button_xpath = download_button_xpath_prefix + "button[@title='약관']"
                                     print("      '약관' 버튼 XPath:", terms_button_xpath)
-                                    # current_page_url 인자 제거
-                                    terms_pdf_path = pdf_extractor.click_and_get_download_link(terms_button_xpath)
-                                    if terms_pdf_path:
-                                        download_links_status["약관"] = True
-                                        downloaded_pdf_paths["약관"] = terms_pdf_path
-                                        print("        '약관' PDF 다운로드/링크 성공: {}".format(terms_pdf_path))
-                                    else:
-                                        print("        '약관' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    try:
+                                        WebDriverWait(driver, 2).until(
+                                            EC.element_to_be_clickable((By.XPATH, terms_button_xpath))
+                                        )
+                                        terms_pdf_path = pdf_extractor.click_and_get_download_link(terms_button_xpath)
+                                        if terms_pdf_path:
+                                            download_links_status["약관"] = True
+                                            downloaded_pdf_paths["약관"] = terms_pdf_path
+                                            print("        '약관' PDF 다운로드/링크 성공: {}".format(terms_pdf_path))
+                                        else:
+                                            print("        '약관' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    except TimeoutException:
+                                        print("        '약관' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
 
+                                    # 사업방법서 버튼 확인 및 클릭 시도
                                     business_method_button_xpath = download_button_xpath_prefix + "button[@title='사업방법서']"
                                     print("      '사업방법서' 버튼 XPath:", business_method_button_xpath)
-                                    # current_page_url 인자 제거
-                                    business_method_pdf_path = pdf_extractor.click_and_get_download_link(business_method_button_xpath)
-                                    if business_method_pdf_path:
-                                        download_links_status["사업방법서"] = True
-                                        downloaded_pdf_paths["사업방법서"] = business_method_pdf_path
-                                        print("        '사업방법서' PDF 다운로드/링크 성공: {}".format(business_method_pdf_path))
-                                    else:
-                                        print("        '사업방법서' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    try:
+                                        WebDriverWait(driver, 2).until(
+                                            EC.element_to_be_clickable((By.XPATH, business_method_button_xpath))
+                                        )
+                                        business_method_pdf_path = pdf_extractor.click_and_get_download_link(business_method_button_xpath)
+                                        if business_method_pdf_path:
+                                            download_links_status["사업방법서"] = True
+                                            downloaded_pdf_paths["사업방법서"] = business_method_pdf_path
+                                            print("        '사업방법서' PDF 다운로드/링크 성공: {}".format(business_method_pdf_path))
+                                        else:
+                                            print("        '사업방법서' PDF 다운로드/링크 실패 또는 감지되지 않음.")
+                                    except TimeoutException:
+                                        print("        '사업방법서' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
                                 else:
                                     print("    PdfLinkExtractor가 초기화되지 않아 PDF 다운로드 시도 건너뜀.")
@@ -317,46 +315,49 @@ if __name__ == "__main__":
         for product in scraped_data:
             print(product)
 
-        # DatabaseManager를 사용하여 데이터 저장
         try:
-            with DatabaseManager(db_name="shinhanez_web_data.db") as db_manager:
-                structured_rows = []
-                for item in scraped_data:
-                    # 약관 저장
-                    if item["약관_PDF_경로"]:
-                        structured_rows.append([
-                            "신한EZ손해보험",  # company_name
-                            item["상품명"],
-                            "",  # product_code (일단 비워둠)
-                            "약관",
-                            item["판매기간"],
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            item["약관_PDF_경로"]
-                        ])
-                    # 상품요약 저장
-                    if item["상품요약_PDF_경로"]:
-                        structured_rows.append([
-                            "신한EZ손해보험",  # company_name
-                            item["상품명"],
-                            "",  # product_code (일단 비워둠)
-                            "상품요약",
-                            item["판매기간"],
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            item["상품요약_PDF_경로"]
-                        ])
-                    # 사업방법서 저장
-                    if item["사업방법서_PDF_경로"]:
-                        structured_rows.append([
-                            "신한EZ손해보험",  # company_name
-                            item["상품명"],
-                            "",  # product_code (일단 비워둠)
-                            "사업방법서",
-                            item["판매기간"],
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            item["사업방법서_PDF_경로"]
-                        ])
-                saved_count = db_manager.save_data(structured_rows)
-                print(f"\n총 {len(scraped_data)}개의 데이터 중 {saved_count}건 저장 완료.")
+            if DatabaseManager:
+                with DatabaseManager(db_name="shinhanez_web_data.db") as db_manager:
+                    structured_rows = []
+                    for item in scraped_data:
+                        if item["약관_PDF_경로"]:
+                            structured_rows.append([
+                                "신한EZ손해보험",  # company_name
+                                item["상품명"],
+                                "",  # product_code (일단 비워둠)
+                                "약관", # document_type
+                                item["판매기간"],
+                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                item["약관_PDF_경로"]
+                            ])
+                        # '상품요약' 대신 '상품요약서'로 변경
+                        if item["상품요약_PDF_경로"]:
+                            structured_rows.append([
+                                "신한EZ손해보험",  # company_name
+                                item["상품명"],
+                                "",  # product_code (일단 비워둠)
+                                "상품요약서", # document_type 변경
+                                item["판매기간"],
+                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                item["상품요약_PDF_경로"]
+                            ])
+                        if item["사업방법서_PDF_경로"]:
+                            structured_rows.append([
+                                "신한EZ손해보험",  # company_name
+                                item["상품명"],
+                                "",  # product_code (일단 비워둠)
+                                "사업방법서", # document_type
+                                item["판매기간"],
+                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                item["사업방법서_PDF_경로"]
+                            ])
+                    if structured_rows:
+                        saved_count = db_manager.save_data(structured_rows)
+                        print(f"\n총 {len(scraped_data)}개의 데이터 중 {saved_count}건 저장 완료.")
+                    else:
+                        print("\n저장할 데이터가 없습니다.")
+            else:
+                print("경고: DatabaseManager를 사용할 수 없습니다. DB 저장이 비활성화됩니다.")
         except Exception as e:
             print(f"DB 저장 중 오류 발생: {e}")
     else:
