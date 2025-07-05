@@ -1,227 +1,139 @@
-import time
 import os
-import requests
-from selenium.webdriver.common.by import By
+import re
+import urllib.parse # 이 모듈은 더 이상 사용하지 않지만, 일단 남겨둡니다. shinhanez.py에서 사용될 것이기 때문입니다.
+from seleniumwire import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+import time
 
 class PdfLinkExtractor:
-    def __init__(self, driver, download_directory=None, verify_url_liveness=True, element_wait_timeout=15, request_timeout=15):  # verify_url_liveness 기본값을 True로 변경
+    def __init__(self, driver: webdriver.Chrome, download_directory: str = None):
         self.driver = driver
-        self.download_dir = download_directory
-        self.verify_url_liveness = verify_url_liveness
-        self.element_wait_timeout = element_wait_timeout
-        self.request_timeout = request_timeout
-        print(
-            f"PdfLinkExtractor initialized (Selenium Wire mode). Verify Liveness: {self.verify_url_liveness}, Element Wait: {self.element_wait_timeout}s, Request Timeout: {self.request_timeout}s, Download Dir: {self.download_dir}")
+        self.download_directory = download_directory
+        self.driver.request_interceptor = self._interceptor
+        self.downloaded_files = [] # 다운로드된 파일 경로 저장
+        print(f"PdfLinkExtractor 초기화. 다운로드 디렉토리: {self.download_directory}")
 
-    def _is_url_live(self, url, timeout=None):
-        if timeout is None:
-            timeout = self.request_timeout
-
-        if not url:
-            return False
-
-        # 로컬 경로는 이 함수에서 검증하지 않음 (항상 유효하다고 간주)
-        if "://" not in url and os.path.isabs(url):
-            return True
-
-        if not self.verify_url_liveness:  # 검증 비활성화 시, 기본적인 웹 URL 형식인지 정도만 확인
-            if "://" in url:
-                return True
-            # print(f"  [_is_url_live] 검증 비활성화, 그러나 유효한 URL 형식 아님: {url}")
-            return False
-
-        # verify_url_liveness=True인 경우 실제 HEAD 요청 검증
-        try:
-            response = requests.head(url, timeout=timeout, allow_redirects=True)
-            if not response.ok:
-                print(f"  [_is_url_live] 검증실패: URL 응답 오류 (상태 코드: {response.status_code}): {url}")
-                return False
-
-            content_type = response.headers.get('Content-Type', '').lower()
-            # Content-Disposition도 확인하여 PDF 파일명을 명시하는지 검토 가능
-            # content_disposition = response.headers.get('Content-Disposition', '').lower()
-            # is_disposition_pdf = 'filename=' in content_disposition and '.pdf' in content_disposition
-
-            is_pdf_content_type = 'application/pdf' in content_type
-            is_url_ends_with_pdf = url.lower().endswith('.pdf')
-
-            # PDF로 판단할 조건: URL이 .pdf로 끝나거나, Content-Type이 application/pdf인 경우
-            if is_url_ends_with_pdf or is_pdf_content_type:  # or is_disposition_pdf:
-                return True
-            else:
-                # API URL과 같은 경우, Content-Type이 application/json 등일 수 있음
-                print(f"  [_is_url_live] 검증실패: URL은 유효(2xx)하나 PDF 콘텐츠 아님 (Content-Type: {content_type}, URL: {url})")
-                return False
-        except requests.exceptions.Timeout:
-            print(f"  [_is_url_live] 검증실패: URL 유효성 확인 중 Timeout ({timeout}초): {url}")
-            return False
-        except requests.exceptions.RequestException as e:
-            print(f"  [_is_url_live] 검증실패: URL 유효성 확인 중 오류 발생 ({url}): {e}")
-            return False
-
-    def get_pdf_url_via_network_interception(self, pdf_trigger_element_xpath):
-        print(f"[Network Interception with Selenium Wire] 시작 - XPath: {pdf_trigger_element_xpath}")
-        try:
-            del self.driver.requests
-
-            if self.download_dir and os.path.isdir(self.download_dir):
-                files_before_click = set(os.listdir(self.download_dir))
-            else:
-                files_before_click = set()
-
-            try:
-                trigger_element = WebDriverWait(self.driver, self.element_wait_timeout).until(
-                    EC.element_to_be_clickable((By.XPATH, pdf_trigger_element_xpath))
-                )
-                self.driver.execute_script("arguments[0].click();", trigger_element)
-            except TimeoutException:
-                print(f"  [SW Interception] 요소 찾기/클릭 실패 (Timeout: {self.element_wait_timeout}s): {pdf_trigger_element_xpath}")
-                return None
-            except Exception as e_click:
-                print(f"  [SW Interception] 요소 클릭 중 오류: {e_click} (XPath: {pdf_trigger_element_xpath})")
-                return None
-
-            time.sleep(3)
-
-            current_url_after_click = self.driver.current_url
-            if current_url_after_click.lower().endswith(".pdf"):  # .pdf로 끝나면 우선적으로 고려
-                if self._is_url_live(current_url_after_click):
-                    print(f"  [SW Interception] 클릭 후 URL이 실제 PDF임: {current_url_after_click}")
-                    return current_url_after_click
-
-            time.sleep(1)
-            for request_num in range(len(self.driver.requests) - 1, -1, -1):
-                request = self.driver.requests[request_num]
-                if request.response:
-                    response_url = request.url
-
-                    # API 호출로 보이는 URL 패턴 필터링 (더 많은 패턴 추가 가능)
-                    api_patterns = ["/api/", "dataserviceid=", "pageid="]
-                    is_api_call_pattern = any(pattern in response_url.lower() for pattern in api_patterns)
-                    if is_api_call_pattern:
-                        # print(f"    [SW Log] API 호출로 보이는 URL 건너뜀: {response_url}")
-                        continue
-
-                    content_type = request.response.headers.get('Content-Type', '').lower()
-                    content_disposition = request.response.headers.get('Content-Disposition', '').lower()
-
-                    is_pdf_mime = 'application/pdf' in content_type
-                    is_pdf_disposition = 'filename=' in content_disposition and '.pdf' in content_disposition
-
-                    if request.response.status_code == 200 and \
-                       (response_url.lower().endswith('.pdf') or is_pdf_disposition or is_pdf_mime):
-                        if self._is_url_live(response_url):
-                            print(f"  [SW Interception] Selenium Wire 요청에서 PDF URL 발견 및 검증 성공: {response_url}")
-                            return response_url
-
-            start_time = time.time()
-            download_check_timeout = 30
-            check_interval = 1
-            while time.time() - start_time < download_check_timeout:
-                current_loop_url = self.driver.current_url
-                if current_loop_url.lower().endswith(".pdf"):  # .pdf로 끝나는지만 먼저 확인
-                    if self._is_url_live(current_loop_url):
-                        print(f"  [SW Interception] 로컬 다운로드 감지 중 현재 URL이 PDF로 변경됨: {current_loop_url}")
-                        return current_loop_url
-
-                if self.download_dir and os.path.isdir(self.download_dir):
-                    current_files_in_loop = set(os.listdir(self.download_dir))
-                    potential_new_pdfs = [
-                        f for f in current_files_in_loop
-                        if f.lower().endswith(".pdf") and f not in files_before_click
-                    ]
-                    if potential_new_pdfs:
-                        new_pdf_file = potential_new_pdfs[0]
-                        file_path = os.path.join(self.download_dir, new_pdf_file)
-                        print(f"  [SW Interception] 로컬 다운로드 감지 성공: {file_path}")
-                        return file_path
-                time.sleep(check_interval)
-
-            if self.download_dir and os.path.isdir(self.download_dir):
-                final_files = set(os.listdir(self.download_dir))
-                final_new_pdfs = [
-                    f for f in final_files
-                    if f.lower().endswith(".pdf") and f not in files_before_click
-                ]
-                if final_new_pdfs:
-                    new_pdf_file = final_new_pdfs[0]
-                    file_path = os.path.join(self.download_dir, new_pdf_file)
-                    print(f"  [SW Interception] 최종 확인에서 로컬 다운로드 감지 성공: {file_path}")
-                    return file_path
-
-            print(f"  [SW Interception] 모든 방법 실패 - XPath: {pdf_trigger_element_xpath}")
-            return None
-        except Exception as e:
-            print(f"네트워크 가로채기(SW) 전체 실행 중 오류: {e} (XPath: {pdf_trigger_element_xpath})")
-            return None
-
-    def extract_pdf_link(self, target_url, pdf_trigger_element_xpath):
-        pdf_url_found = None
-        try:
-            if pdf_trigger_element_xpath:
-                pdf_url_found = self.get_pdf_url_via_network_interception(pdf_trigger_element_xpath)
-
-            if pdf_url_found:
-                print(f"PdfLinkExtractor: 최종 추출된 PDF 링크/경로: {pdf_url_found}")
-            return pdf_url_found
-        except Exception as e:
-            print(f"PDF 링크 추출 중 오류: {e}")
-            return None
-
-    def click_and_get_download_link(self, pdf_trigger_element_xpath):
+    def _interceptor(self, request):
         """
-        지정된 XPath의 요소를 클릭하고, 다운로드된 PDF 파일의 로컬 경로를 반환합니다.
-        다운로드 디렉토리가 설정되어 있어야 로컬 파일 감지가 작동합니다.
+        Request interceptor to log POST requests, particularly for PDF downloads.
         """
-        print(f"클릭 후 다운로드 링크/경로 가져오기 시작 - XPath: {pdf_trigger_element_xpath}")
+        if request.method == 'POST' and 'fileDown' in request.url:
+            print(f"  [Interceptor] PDF 다운로드 POST 요청 감지: {request.url}")
+            # 페이로드 전체를 로깅하는 것은 너무 길 수 있으므로, 간략하게 변경하거나 제거할 수 있습니다.
+            print(f"  [Interceptor] Request Body (Payload): {request.body.decode('utf-8')}")
 
-        if not self.download_dir or not os.path.isdir(self.download_dir):
-            print(f"  [Download Link] 다운로드 디렉토리가 설정되지 않았거나 유효하지 않습니다: {self.download_dir}")
-            return None
+    def _wait_for_download(self, initial_files=None, timeout=30):
+        """
+        주어진 디렉토리에서 새 파일 다운로드가 완료될 때까지 기다립니다.
+        """
+        if initial_files is None:
+            initial_files = set(os.listdir(self.download_directory))
 
-        files_before_click = set(os.listdir(self.download_dir))
-
-        try:
-            trigger_element = WebDriverWait(self.driver, self.element_wait_timeout).until(
-                EC.element_to_be_clickable((By.XPATH, pdf_trigger_element_xpath))
-            )
-            self.driver.execute_script("arguments[0].click();", trigger_element)
-            print(f"  [Download Link] 요소 클릭 완료: {pdf_trigger_element_xpath}")
-        except TimeoutException:
-            print(f"  [Download Link] 요소 찾기/클릭 실패 (Timeout: {self.element_wait_timeout}s): {pdf_trigger_element_xpath}")
-            return None
-        except Exception as e_click:
-            print(f"  [Download Link] 요소 클릭 중 오류: {e_click} (XPath: {pdf_trigger_element_xpath})")
-            return None
-
-        # 다운로드 완료를 기다립니다.
         start_time = time.time()
-        download_check_timeout = 120  # 다운로드 대기 시간 (초)를 120초로 늘림
-        check_interval = 1  # 파일 존재 여부 확인 간격 (초)
+        while time.time() - start_time < timeout:
+            current_files = set(os.listdir(self.download_directory))
+            new_files = current_files - initial_files
 
-        while time.time() - start_time < download_check_timeout:
-            current_files = set(os.listdir(self.download_dir))
-            new_files = current_files - files_before_click
-
-            for f in new_files:
-                file_path = os.path.join(self.download_dir, f)
-                # PDF 파일이고, 다운로드가 완료된 것으로 보이는지 확인 (예: .crdownload 확장자가 없는지)
-                # 추가: 파일 크기가 0보다 큰지 확인
-                if f.lower().endswith(".pdf") and not f.endswith(".crdownload") and os.path.getsize(file_path) > 0:
-                    print(f"  [Download Link] 로컬 다운로드 감지 성공: {file_path}")
-                    return file_path
-            time.sleep(check_interval)
-
-        print(f"  [Download Link] 지정된 시간 내에 PDF 다운로드를 감지하지 못했습니다. (Timeout: {download_check_timeout}s)")
+            for f_name in new_files:
+                f_path = os.path.join(self.download_directory, f_name)
+                # .crdownload 확장자가 사라지면 다운로드 완료로 간주
+                if not f_name.endswith('.crdownload') and os.path.exists(f_path):
+                    self.downloaded_files.append(f_path)
+                    print(f"  [Download Monitor] 새 파일 다운로드 완료: {f_path}")
+                    return f_path
+            time.sleep(0.5) # 0.5초 간격으로 확인
+        print(f"  [Download Monitor] 지정된 시간({timeout}초) 내에 새 파일 다운로드 완료되지 않음.")
         return None
 
+    def click_and_get_download_link(self, button_xpath: str, timeout: int = 10):
+        """
+        XPath로 버튼을 클릭하고 네트워크 요청을 모니터링하여 PDF 다운로드 링크를 추출하거나 파일 다운로드를 감지합니다.
+        (이 함수는 실제 파일 다운로드 방식을 사용할 때 유용합니다.)
+        """
+        try:
+            button = WebDriverWait(self.driver, timeout).until(
+                EC.element_to_be_clickable((By.XPATH, button_xpath))
+            )
+            print(f"  버튼 클릭 시도: {button_xpath}")
 
-if __name__ == "__main__":
-    # from seleniumwire import webdriver
-    # from selenium.webdriver.chrome.options import Options
-    # chrome_options = Options()
-    pass
+            # 현재 존재하는 파일 목록 저장 (다운로드 감지를 위해)
+            initial_files = set(os.listdir(self.download_directory))
+
+            # 버튼 클릭 전 요청 초기화 (Selenium Wire)
+            del self.driver.requests
+            
+            button.click()
+            print("  버튼 클릭 완료.")
+
+            # 특정 POST 요청이 발생할 때까지 기다립니다.
+            try:
+                # 'fileDown'이 포함된 POST 요청을 기다림
+                WebDriverWait(self.driver, timeout).until(
+                    lambda driver: any('fileDown' in r.url and r.method == 'POST' for r in driver.requests)
+                )
+                print("  PDF 다운로드 관련 POST 요청 감지됨.")
+            except TimeoutException:
+                print(f"  경고: {timeout}초 내에 PDF 다운로드 POST 요청이 감지되지 않았습니다. 파일 다운로드 대기 시도.")
+                # 요청이 감지되지 않아도 실제 파일 다운로드가 시작될 수 있으므로 계속 진행
+
+            # 파일 다운로드를 기다립니다.
+            downloaded_file_path = self._wait_for_download(initial_files, timeout=timeout)
+            if downloaded_file_path:
+                return downloaded_file_path
+            else:
+                print("  경고: 파일 다운로드 경로를 얻지 못했습니다. 네트워크 요청에서 링크를 찾거나 직접 다운로드되지 않을 수 있습니다.")
+                return None # 파일 다운로드가 감지되지 않으면 None 반환
+
+        except TimeoutException:
+            print(f"  오류: XPath '{button_xpath}'의 버튼을 {timeout}초 내에 찾거나 클릭할 수 없습니다.")
+            return None
+        except StaleElementReferenceException:
+            print(f"  오류: XPath '{button_xpath}'의 버튼이 StaleElementReferenceException 발생. DOM이 변경되었을 수 있습니다.")
+            return None
+        except Exception as e:
+            print(f"  버튼 클릭 및 링크 추출 중 예상치 못한 오류 발생: {e}")
+            return None
+        
+    def get_pdf_download_payload(self, button_xpath: str, timeout: int = 10):
+        """
+        XPath로 버튼을 클릭하고 해당 POST 요청의 페이로드를 반환합니다.
+        실제 PDF 링크가 아닌, PDF 다운로드에 사용되는 요청의 바디를 추출합니다.
+        이 함수는 범용적으로 페이로드를 추출하는 역할만 수행합니다.
+        """
+        try:
+            button = WebDriverWait(self.driver, timeout).until(
+                EC.element_to_be_clickable((By.XPATH, button_xpath))
+            )
+            print(f"  버튼 클릭 시도 (페이로드 추출용): {button_xpath}")
+
+            # 버튼 클릭 전 요청 초기화
+            del self.driver.requests
+            
+            button.click()
+            print("  버튼 클릭 완료.")
+
+            # 'fileDown'이 포함된 POST 요청의 응답을 기다림
+            WebDriverWait(self.driver, timeout).until(
+                lambda driver: any('fileDown' in r.url and r.method == 'POST' for r in driver.requests)
+            )
+            
+            for request in self.driver.requests:
+                if 'fileDown' in request.url and request.method == 'POST':
+                    print(f"  [페이로드 추출기] PDF 다운로드 POST 요청 페이로드 감지: {request.body.decode('utf-8')}")
+                    return request.body.decode('utf-8') # 페이로드 반환
+            
+            print("  경고: 'fileDown' POST 요청 페이로드를 찾을 수 없습니다.")
+            return None
+
+        except TimeoutException:
+            print(f"  오류: XPath '{button_xpath}'의 버튼을 {timeout}초 내에 찾거나 클릭할 수 없거나, 'fileDown' POST 요청이 감지되지 않았습니다.")
+            return None
+        except StaleElementReferenceException:
+            print(f"  오류: XPath '{button_xpath}'의 버튼이 StaleElementReferenceException 발생. DOM이 변경되었을 수 있습니다.")
+            return None
+        except Exception as e:
+            print(f"  버튼 클릭 및 페이로드 추출 중 예상치 못한 오류 발생: {e}")
+            return None

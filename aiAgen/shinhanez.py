@@ -1,4 +1,4 @@
-# 신한EZ손해보험/db확인/판매중지
+# 신한EZ손해보험/판매중지
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -11,6 +11,8 @@ import time
 import os
 import sys
 from datetime import datetime
+import re # re 모듈 추가
+import urllib.parse # urllib.parse 모듈 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -39,6 +41,69 @@ def set_chrome_download_options(options, download_dir):
     options.add_experimental_option("prefs", prefs)
     print(f"Chrome 다운로드 경로 설정 완료: {download_dir}")
     return options
+
+# --- NEW HELPER FUNCTIONS FOR SHINHANEZ.PY (페이로드 파싱 및 URL 구성 로직) ---
+def _parse_shinhanez_multipart_formdata(payload: str):
+    """
+    multipart/form-data 페이로드 문자열을 파싱하여 딕셔너리로 반환합니다.
+    신한EZ손해보험 사이트의 페이로드 형식에 특화되어 있습니다.
+    """
+    data = {}
+    lines = payload.split('\r\n')
+    if not lines:
+        return data
+
+    boundary_match = re.match(r'--([a-zA-Z0-9.+_-]+)', lines[0])
+    if not boundary_match:
+        # print("경고: multipart/form-data 페이로드에서 boundary를 찾을 수 없습니다.") # 디버깅 시 필요하다면 주석 해제
+        return data
+    
+    boundary = "--" + boundary_match.group(1)
+    
+    parts = payload.split(boundary)
+    
+    for part in parts:
+        if 'Content-Disposition' in part:
+            name_match = re.search(r'name="([^"]+)"', part)
+            if name_match:
+                name = name_match.group(1)
+                value_match = re.search(r'\r\n\r\n(.*)', part, re.DOTALL)
+                if value_match:
+                    value = value_match.group(1).strip()
+                    if value.endswith('--'):
+                        value = value[:-2]
+                    data[name] = value
+    return data
+
+def _get_shinhanez_pdf_url_from_payload(payload: str, base_url: str):
+    """
+    주어진 페이로드와 기본 URL을 사용하여 신한EZ손해보험 PDF 다운로드 URL을 구성합니다.
+    """
+    if not payload:
+        print("오류: PDF 링크 생성을 위한 페이로드(payload)가 비어 있습니다.")
+        return None
+
+    parsed_data = _parse_shinhanez_multipart_formdata(payload)
+
+    if not parsed_data:
+        print("경고: 페이로드에서 PDF 다운로드 링크 생성에 필요한 파라미터를 찾을 수 없습니다. 페이로드 파싱 실패.")
+        return None
+
+    file_no = parsed_data.get('fileNo')
+    file_seq = parsed_data.get('fileSeq')
+
+    if file_no and file_seq:
+        encoded_file_no = urllib.parse.quote(file_no)
+        encoded_file_seq = urllib.parse.quote(file_seq)
+        
+        download_url = f"{base_url}?fileNo={encoded_file_no}&fileSeq={encoded_file_seq}"
+        
+        # print(f"  [Shinhanez Parser] 구성된 PDF 다운로드 URL: {download_url}") # 디버깅 시 필요하다면 주석 해제
+        return download_url
+    else:
+        print(f"경고: 페이로드에서 fileNo ({file_no}) 또는 fileSeq ({file_seq}) 파라미터를 찾을 수 없습니다.")
+        return None
+# --- END NEW HELPER FUNCTIONS ---
 
 
 def scrape_complex_insurance_products_final_with_logs(url):
@@ -183,6 +248,9 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                     f"td[@class='btn-col']/div[@data-bind='salePrdNmDepth3']/"
                                 )
 
+                                # 신한EZ손해보험의 PDF 다운로드 요청 URL
+                                SHINHANEZ_FILE_DOWN_URL = "https://www.shinhanez.co.kr/cmn/fileDown"
+
                                 if pdf_extractor:
                                     # 상품요약 버튼 확인 및 클릭 시도
                                     summary_button_xpath = download_button_xpath_prefix + "button[@title='상품요약']"
@@ -191,13 +259,21 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                         WebDriverWait(driver, 2).until(
                                             EC.element_to_be_clickable((By.XPATH, summary_button_xpath))
                                         )
-                                        summary_pdf_path = pdf_extractor.click_and_get_download_link(summary_button_xpath)
+                                        summary_payload = pdf_extractor.get_pdf_download_payload(summary_button_xpath)
+                                        summary_pdf_path = None
+                                        if summary_payload:
+                                            print("        '상품요약' 페이로드 추출 성공, PDF 링크 생성 시도...")
+                                            # _get_shinhanez_pdf_url_from_payload 함수 사용
+                                            summary_pdf_path = _get_shinhanez_pdf_url_from_payload(summary_payload, SHINHANEZ_FILE_DOWN_URL)
+                                            if not summary_pdf_path:
+                                                print("        경고: '상품요약' 페이로드로부터 PDF 다운로드 링크 생성에 실패했습니다.")
+                                        else:
+                                            print("        경고: '상품요약' 페이로드를 찾을 수 없습니다.")
+
                                         if summary_pdf_path:
                                             download_links_status["상품요약"] = True
                                             downloaded_pdf_paths["상품요약"] = summary_pdf_path
                                             print("        '상품요약' PDF 다운로드/링크 성공: {}".format(summary_pdf_path))
-                                        else:
-                                            print("        '상품요약' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     except TimeoutException:
                                         print("        '상품요약' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
@@ -209,13 +285,21 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                         WebDriverWait(driver, 2).until(
                                             EC.element_to_be_clickable((By.XPATH, terms_button_xpath))
                                         )
-                                        terms_pdf_path = pdf_extractor.click_and_get_download_link(terms_button_xpath)
+                                        terms_payload = pdf_extractor.get_pdf_download_payload(terms_button_xpath)
+                                        terms_pdf_path = None
+                                        if terms_payload:
+                                            print("        '약관' 페이로드 추출 성공, PDF 링크 생성 시도...")
+                                            # _get_shinhanez_pdf_url_from_payload 함수 사용
+                                            terms_pdf_path = _get_shinhanez_pdf_url_from_payload(terms_payload, SHINHANEZ_FILE_DOWN_URL)
+                                            if not terms_pdf_path:
+                                                print("        경고: '약관' 페이로드로부터 PDF 다운로드 링크 생성에 실패했습니다.")
+                                        else:
+                                            print("        경고: '약관' 페이로드를 찾을 수 없습니다.")
+
                                         if terms_pdf_path:
                                             download_links_status["약관"] = True
                                             downloaded_pdf_paths["약관"] = terms_pdf_path
                                             print("        '약관' PDF 다운로드/링크 성공: {}".format(terms_pdf_path))
-                                        else:
-                                            print("        '약관' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     except TimeoutException:
                                         print("        '약관' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
@@ -227,13 +311,21 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                         WebDriverWait(driver, 2).until(
                                             EC.element_to_be_clickable((By.XPATH, business_method_button_xpath))
                                         )
-                                        business_method_pdf_path = pdf_extractor.click_and_get_download_link(business_method_button_xpath)
+                                        business_method_payload = pdf_extractor.get_pdf_download_payload(business_method_button_xpath)
+                                        business_method_pdf_path = None
+                                        if business_method_payload:
+                                            print("        '사업방법서' 페이로드 추출 성공, PDF 링크 생성 시도...")
+                                            # _get_shinhanez_pdf_url_from_payload 함수 사용
+                                            business_method_pdf_path = _get_shinhanez_pdf_url_from_payload(business_method_payload, SHINHANEZ_FILE_DOWN_URL)
+                                            if not business_method_pdf_path:
+                                                print("        경고: '사업방법서' 페이로드로부터 PDF 다운로드 링크 생성에 실패했습니다.")
+                                        else:
+                                            print("        경고: '사업방법서' 페이로드를 찾을 수 없습니다.")
+
                                         if business_method_pdf_path:
                                             download_links_status["사업방법서"] = True
                                             downloaded_pdf_paths["사업방법서"] = business_method_pdf_path
                                             print("        '사업방법서' PDF 다운로드/링크 성공: {}".format(business_method_pdf_path))
-                                        else:
-                                            print("        '사업방법서' PDF 다운로드/링크 실패 또는 감지되지 않음.")
                                     except TimeoutException:
                                         print("        '사업방법서' 버튼을 찾을 수 없거나 클릭할 수 없음. (존재하지 않을 수 있음)")
                                     time.sleep(0.5)
@@ -330,7 +422,6 @@ if __name__ == "__main__":
                                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 item["약관_PDF_경로"]
                             ])
-                        # '상품요약' 대신 '상품요약서'로 변경
                         if item["상품요약_PDF_경로"]:
                             structured_rows.append([
                                 "신한EZ손해보험",  # company_name
