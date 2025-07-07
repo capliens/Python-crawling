@@ -72,12 +72,15 @@ class IDBLifeScraper:
                 try:
                     if current_page == 1:
                         pagination_div = WebDriverWait(self.driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, "div.page01.js-tag[data-role='pagination']"))
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, "div.page01.js-tag[data-role='pagination']"))
                         )
-                        total_pages = int(pagination_div.get_attribute("data-total-page"))
+                        total_pages = int(
+                            pagination_div.get_attribute("data-total-page"))
                         print(f"   총 페이지 수: {total_pages}")
 
-                    rows = self.driver.find_elements(By.CSS_SELECTOR, "table.tables1 tbody tr")
+                    rows = self.driver.find_elements(
+                        By.CSS_SELECTOR, "table.tables1 tbody tr")
                     print(f"   페이지 {current_page}에서 {len(rows)}개의 상품을 찾았습니다.")
 
                     for row in rows:
@@ -92,37 +95,46 @@ class IDBLifeScraper:
                         }
 
                         try:
-                            product_data["상품명"] = row.find_element(By.CSS_SELECTOR, "th.als.pl10").text.strip()
+                            product_data["상품명"] = row.find_element(
+                                By.CSS_SELECTOR, "th.als.pl10").text.strip()
                         except NoSuchElementException:
                             pass
 
                         try:
-                            product_data["판매기간"] = row.find_element(By.XPATH, "./td[1]").text.strip()
+                            product_data["판매기간"] = row.find_element(
+                                By.XPATH, "./td[1]").text.strip()
                         except NoSuchElementException:
                             pass
 
                         terms_button_url = ""
                         try:
-                            business_method_element = row.find_element(By.XPATH, "./td[2]/a")
-                            product_data["사업방법서_링크"] = business_method_element.get_attribute("href")
+                            business_method_element = row.find_element(
+                                By.XPATH, "./td[2]/a")
+                            product_data["사업방법서_링크"] = business_method_element.get_attribute(
+                                "href")
                         except NoSuchElementException:
                             pass
 
                         try:
-                            product_summary_element = row.find_element(By.XPATH, "./td[3]/a")
-                            product_data["상품요약서_링크"] = product_summary_element.get_attribute("href")
+                            product_summary_element = row.find_element(
+                                By.XPATH, "./td[3]/a")
+                            product_data["상품요약서_링크"] = product_summary_element.get_attribute(
+                                "href")
                         except NoSuchElementException:
                             pass
 
                         try:
-                            terms_element = row.find_element(By.XPATH, "./td[4]/a")
-                            terms_button_url = terms_element.get_attribute("href")
+                            terms_element = row.find_element(
+                                By.XPATH, "./td[4]/a")
+                            terms_button_url = terms_element.get_attribute(
+                                "href")
                         except NoSuchElementException:
                             pass
 
                         if terms_button_url:
                             main_window_handle = self.driver.current_window_handle
-                            self.driver.execute_script(f"window.open('{terms_button_url}');")
+                            self.driver.execute_script(
+                                f"window.open('{terms_button_url}');")
                             time.sleep(2)
 
                             new_window_handle = None
@@ -135,7 +147,8 @@ class IDBLifeScraper:
                                 self.driver.switch_to.window(new_window_handle)
                                 try:
                                     WebDriverWait(self.driver, 10).until(
-                                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.pops1"))
+                                        EC.presence_of_element_located(
+                                            (By.CSS_SELECTOR, "div.pops1"))
                                     )
 
                                     current_section = None
@@ -147,24 +160,30 @@ class IDBLifeScraper:
                                             current_section = element.text.strip()
                                         elif element.tag_name == "a" and current_section:
                                             link_name = element.text.strip()
-                                            link_url = element.get_attribute("href")
+                                            link_url = element.get_attribute(
+                                                "href")
 
                                             if "주계약" in current_section:
-                                                product_data["주계약_약관"].append({"이름": link_name, "URL": link_url})
+                                                product_data["주계약_약관"].append(
+                                                    {"이름": link_name, "URL": link_url})
                                             elif "특약" in current_section:
-                                                product_data["특약_약관"].append({"이름": link_name, "URL": link_url})
+                                                product_data["특약_약관"].append(
+                                                    {"이름": link_name, "URL": link_url})
                                 except Exception as e:
                                     print(f"   새 창 약관 스크래핑 중 오류 발생: {e}")
                                 finally:
                                     self.driver.close()
-                                    self.driver.switch_to.window(main_window_handle)
+                                    self.driver.switch_to.window(
+                                        main_window_handle)
                             else:
-                                print(f"   상품명 '{product_data['상품명']}'의 새 약관 창을 찾을 수 없습니다.")
+                                print(
+                                    f"   상품명 '{product_data['상품명']}'의 새 약관 창을 찾을 수 없습니다.")
 
                         all_products_raw.append(product_data)
 
                 except NoSuchElementException as e:
-                    print(f"'{tab_name}' 탭 페이지 {current_page}에서 요소를 찾을 수 없습니다: {e}")
+                    print(
+                        f"'{tab_name}' 탭 페이지 {current_page}에서 요소를 찾을 수 없습니다: {e}")
                     break
                 except Exception as e:
                     print(f"'{tab_name}' 탭 페이지 {current_page} 스크래핑 중 오류 발생: {e}")
@@ -239,6 +258,6 @@ if __name__ == "__main__":
                 doc["URL"]
             ])
 
-    with DatabaseManager(db_name="insurance_products.db") as db_manager:
+    with DatabaseManager(db_name="dblife_web_data.db") as db_manager:
         saved_count = db_manager.save_data(structured_rows_to_save)
         print(f"\n--- 총 {saved_count}건의 데이터가 DB에 저장되었습니다. ---")

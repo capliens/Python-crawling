@@ -11,7 +11,8 @@ from datetime import datetime
 import os  # sys.path 수정을 위해 추가
 import sys  # sys.path 수정을 위해 추가
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+project_root = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -39,7 +40,8 @@ def scrape_axa_insurance_products():
     print("현재 판매 상품 정보 수집 중...")
     try:
         current_products_tab = wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "div.tab.tap_price > ul > li > a.m2.bg"))
+            EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "div.tab.tap_price > ul > li > a.m2.bg"))
         )
         current_products_tab.click()
         time.sleep(2)
@@ -62,11 +64,13 @@ def scrape_axa_insurance_products():
             if row_id and row_id.startswith("CatIDsb"):
                 product_name_td = row.find_elements(By.TAG_NAME, "td")
                 if product_name_td:
-                    current_product_name = product_name_td[0].get_attribute('textContent').strip()
+                    current_product_name = product_name_td[0].get_attribute(
+                        'textContent').strip()
                 continue
 
             cells = row.find_elements(By.TAG_NAME, "td")
-            sales_period = cells[0].get_attribute('textContent').strip() if len(cells) > 0 else ""
+            sales_period = cells[0].get_attribute(
+                'textContent').strip() if len(cells) > 0 else ""
 
             doc_links = []
             link_types = ["상품요약서", "약관", "사업방법서"]
@@ -74,7 +78,8 @@ def scrape_axa_insurance_products():
                 link_data = None
                 if len(cells) > (i + 1):
                     try:
-                        link_element = cells[i + 1].find_element(By.TAG_NAME, "a")
+                        link_element = cells[i +
+                                             1].find_element(By.TAG_NAME, "a")
                         href = link_element.get_attribute("href")
                         if href and href.strip() != "#" and href.strip() != "":  # 유효한 링크인지 추가 확인
                             link_data = (link_type, href)
@@ -111,7 +116,8 @@ def is_valid_axa_link(link_tuple):
         return False
 
     # 일반적인 오류/상태 표시 문자열 포함 여부 검사
-    invalid_markers = ["N/A", "(추출 실패)", "(링크/버튼 없음)", "(링크 요소 없음)", "(href 없음)", "(추출 오류)"]
+    invalid_markers = ["N/A", "(추출 실패)", "(링크/버튼 없음)",
+                       "(링크 요소 없음)", "(href 없음)", "(추출 오류)"]
     for marker in invalid_markers:
         if marker in link_str:
             return False
@@ -184,12 +190,13 @@ if __name__ == "__main__":
                     structured_rows_to_save.extend(current_product_docs)
 
             if structured_rows_to_save:
-                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                with DatabaseManager(db_name="axa_web_data.db") as db_manager:
                     saved_count = db_manager.save_data(structured_rows_to_save)
                 print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
             else:
                 print("DB 저장할 유효한 문서 정보 없음.")
-            print(f"총 스크래핑된 상품 그룹 수: {len(scraped_product_info)}개")  # 상품 그룹 수로 변경
+            # 상품 그룹 수로 변경
+            print(f"총 스크래핑된 상품 그룹 수: {len(scraped_product_info)}개")
         else:
             print("DatabaseManager 사용 불가. DB 저장 건너뜀.")
     else:

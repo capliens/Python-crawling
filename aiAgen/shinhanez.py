@@ -11,8 +11,8 @@ import time
 import os
 import sys
 from datetime import datetime
-import re # re 모듈 추가
-import urllib.parse # urllib.parse 모듈 추가
+import re  # re 모듈 추가
+import urllib.parse  # urllib.parse 모듈 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
@@ -31,6 +31,8 @@ if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
 # --- Chrome 다운로드 옵션 설정 함수 ---
+
+
 def set_chrome_download_options(options, download_dir):
     prefs = {
         "download.default_directory": download_dir,
@@ -43,6 +45,8 @@ def set_chrome_download_options(options, download_dir):
     return options
 
 # --- NEW HELPER FUNCTIONS FOR SHINHANEZ.PY (페이로드 파싱 및 URL 구성 로직) ---
+
+
 def _parse_shinhanez_multipart_formdata(payload: str):
     """
     multipart/form-data 페이로드 문자열을 파싱하여 딕셔너리로 반환합니다.
@@ -57,11 +61,11 @@ def _parse_shinhanez_multipart_formdata(payload: str):
     if not boundary_match:
         # print("경고: multipart/form-data 페이로드에서 boundary를 찾을 수 없습니다.") # 디버깅 시 필요하다면 주석 해제
         return data
-    
+
     boundary = "--" + boundary_match.group(1)
-    
+
     parts = payload.split(boundary)
-    
+
     for part in parts:
         if 'Content-Disposition' in part:
             name_match = re.search(r'name="([^"]+)"', part)
@@ -74,6 +78,7 @@ def _parse_shinhanez_multipart_formdata(payload: str):
                         value = value[:-2]
                     data[name] = value
     return data
+
 
 def _get_shinhanez_pdf_url_from_payload(payload: str, base_url: str):
     """
@@ -95,9 +100,9 @@ def _get_shinhanez_pdf_url_from_payload(payload: str, base_url: str):
     if file_no and file_seq:
         encoded_file_no = urllib.parse.quote(file_no)
         encoded_file_seq = urllib.parse.quote(file_seq)
-        
+
         download_url = f"{base_url}?fileNo={encoded_file_no}&fileSeq={encoded_file_seq}"
-        
+
         # print(f"  [Shinhanez Parser] 구성된 PDF 다운로드 URL: {download_url}") # 디버깅 시 필요하다면 주석 해제
         return download_url
     else:
@@ -191,7 +196,7 @@ def scrape_complex_insurance_products_final_with_logs(url):
                         current_tbody_element = WebDriverWait(driver, 5).until(
                             EC.presence_of_element_located((By.XPATH, f"{container_xpath}/table/tbody[@data-eid='prdList']"))
                         )
-                        
+
                         sales_period_elements = current_tbody_element.find_elements(By.XPATH, "./tr/td[2]/a[@data-bind='salePrdNmDepth2']")
 
                         for sp_elem in sales_period_elements:
@@ -316,7 +321,8 @@ def scrape_complex_insurance_products_final_with_logs(url):
                                         if business_method_payload:
                                             print("        '사업방법서' 페이로드 추출 성공, PDF 링크 생성 시도...")
                                             # _get_shinhanez_pdf_url_from_payload 함수 사용
-                                            business_method_pdf_path = _get_shinhanez_pdf_url_from_payload(business_method_payload, SHINHANEZ_FILE_DOWN_URL)
+                                            business_method_pdf_path = _get_shinhanez_pdf_url_from_payload(
+                                                business_method_payload, SHINHANEZ_FILE_DOWN_URL)
                                             if not business_method_pdf_path:
                                                 print("        경고: '사업방법서' 페이로드로부터 PDF 다운로드 링크 생성에 실패했습니다.")
                                         else:
@@ -417,7 +423,7 @@ if __name__ == "__main__":
                                 "신한EZ손해보험",  # company_name
                                 item["상품명"],
                                 "",  # product_code (일단 비워둠)
-                                "약관", # document_type
+                                "약관",  # document_type
                                 item["판매기간"],
                                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 item["약관_PDF_경로"]
@@ -427,7 +433,7 @@ if __name__ == "__main__":
                                 "신한EZ손해보험",  # company_name
                                 item["상품명"],
                                 "",  # product_code (일단 비워둠)
-                                "상품요약서", # document_type 변경
+                                "상품요약서",  # document_type 변경
                                 item["판매기간"],
                                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 item["상품요약_PDF_경로"]
@@ -437,7 +443,7 @@ if __name__ == "__main__":
                                 "신한EZ손해보험",  # company_name
                                 item["상품명"],
                                 "",  # product_code (일단 비워둠)
-                                "사업방법서", # document_type
+                                "사업방법서",  # document_type
                                 item["판매기간"],
                                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 item["사업방법서_PDF_경로"]
