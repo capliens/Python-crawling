@@ -1,5 +1,8 @@
-# 라이나생명보험/판매중단페이지
+# 라이나생명보험/판매중단페이지/DB확인
 import time
+import os
+import sys
+from datetime import datetime  # datetime import 추가
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -8,6 +11,16 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+try:
+    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+except ImportError as e:
+    DatabaseManager = None  # DatabaseManager 초기화 추가
+    print(f"DB연결문제: {e}")
 
 
 def wait_for_spinner_to_disappear(driver, timeout=10):
@@ -210,8 +223,7 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
                                                                 print(f"      '{doc_type}' URL 추출 완료: {pdf_url}")
 
                                                             except TimeoutException as url_timeout_e:
-                                                                print(
-                                                                    f"    ERROR: '{doc_type}' URL 로딩 중 타임아웃 발생 (2차 대기 오류). 다음 문서로 진행: {url_timeout_e}")
+                                                                print(f"    ERROR: '{doc_type}' URL 로딩 중 타임아웃 발생: {url_timeout_e}")
                                                                 row_data[doc_type] = "PDF 다운로드 버튼 존재 (URL 추출 실패: 로딩 타임아웃)"
                                                                 row_data[doc_info_key] = "ERROR: PDF URL loading timeout"
                                                             finally:  # URL 추출 실패 여부와 관계없이 새 탭을 닫고 원래 탭으로 복귀
@@ -220,11 +232,10 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
                                                                 except Exception as close_err:
                                                                     print(f"    WARNING: 새 탭 닫기 중 오류 발생: {close_err}")
                                                                 driver.switch_to.window(original_window)  # 원래 탭으로 복귀
-                                                                print(f"    새 탭 닫고 원래 탭으로 복귀 완료.")
+                                                                print("    새 탭 닫고 원래 탭으로 복귀 완료.")
 
                                                         elif len(new_window_handles) > 1:
-                                                            print(
-                                                                f"    WARNING: '{doc_type}' 버튼 클릭 후 여러 개의 새 탭이 열렸습니다. (개수: {len(new_window_handles)}). URL 추출 실패.")
+                                                            print(f"    WARNING: '{doc_type}' 버튼 클릭 후 여러 개의 새 탭이 열렸습니다. URL 추출 실패.")
                                                             row_data[doc_type] = "PDF 다운로드 버튼 존재 (오류로 URL 추출 실패: 여러 탭 열림)"
                                                             row_data[doc_info_key] = "ERROR: Multiple tabs opened"
                                                             for handle in new_window_handles:  # 열린 모든 새 탭 닫기 시도
@@ -234,9 +245,9 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
                                                                 except Exception as close_e:
                                                                     print(f"    WARNING: 여러 탭 닫기 중 오류 발생: {close_e}")
                                                             driver.switch_to.window(original_window)  # 원래 탭으로 복귀
-                                                            print(f"    열린 모든 새 탭을 닫고 원래 탭으로 복귀 완료.")
+                                                            print("    열린 모든 새 탭을 닫고 원래 탭으로 복귀 완료.")
                                                         else:
-                                                            print(f"    WARNING: '{doc_type}' 버튼 클릭 후 새 탭이 열리지 않았습니다. (URL 추출 실패).")
+                                                            print(f"    WARNING: '{doc_type}' 버튼 클릭 후 새 탭이 열리지 않았습니다.")
                                                             row_data[doc_type] = "PDF 다운로드 버튼 존재 (URL 추출 실패: 새 탭 없음)"
                                                             row_data[doc_info_key] = "N/A (새 탭 없음)"
 
@@ -258,10 +269,10 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
                                                         row_data[doc_info_key] = "ERROR: Unknown"
                                                         try:  # 오류 발생 시에도 원래 탭으로 돌아가도록 안전장치 추가
                                                             driver.switch_to.window(original_window)
-                                                        except Exception as re_e:
-                                                            print(f"    CRITICAL WARNING: 원래 탭 복귀 중 오류 발생: {re_e}")
-                                            except Exception as e:  # 판매기간 셀을 찾지 못하면 해당 행 건너뛰기
-                                                # print(f"    WARNING: 행 데이터 추출 중 오류 발생, 행 건너뜀: {e}") # 너무 많은 로그 방지 위해 주석 처리
+                                                        except Exception:
+                                                            print("    CRITICAL WARNING: 원래 탭 복귀 중 오류 발생.")
+                                            except Exception:  # 판매기간 셀을 찾지 못하면 해당 행 건너뛰기
+                                                # print("    WARNING: 행 데이터 추출 중 오류 발생, 행 건너뜀.") # 너무 많은 로그 방지 위해 주석 처리
                                                 continue
 
                                             if row_data.get("판매기간"):  # 판매기간이 있는 유효한 행만 추가
@@ -431,3 +442,45 @@ if __name__ == "__main__":
         print("추출된 데이터가 없습니다.")
 
     print(f"\n총 {len(scraped_data)}개의 상품 정보를 추출했습니다.")
+
+    # 추출된 데이터를 DatabaseManager 형식으로 변환
+    structured_rows_to_save = []
+    company_name = "라이나생명"
+    scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for product_entry in scraped_data:
+        product_group = product_entry['상품군']
+        for detail_item in product_entry['상세_페이지_내_추출된_상품들']:
+            product_name = detail_item.get('상품명', 'N/A')
+            for doc_info in detail_item.get('판매기간_및_문서', []):
+                sales_period = doc_info.get('판매기간', 'N/A')
+
+                doc_types_map = {
+                    "상품요약서": "상품요약서",
+                    "사업방법서": "사업방법서",
+                    "약관": "약관"
+                }
+
+                for doc_type_key, doc_type_name in doc_types_map.items():
+                    doc_url_key = f"{doc_type_key}_URL"
+                    link = doc_info.get(doc_url_key)
+
+                    if link and link != "N/A" and not link.startswith("ERROR"):
+                        structured_rows_to_save.append([
+                            company_name,
+                            product_name,
+                            None,  # product_code는 None으로 저장 요청에 따라 None으로 설정
+                            doc_type_name,
+                            sales_period,
+                            scraped_time,
+                            link
+                        ])
+
+    # DatabaseManager를 사용하여 데이터 저장
+    if DatabaseManager:
+        db_file_path = os.path.join(project_root, "DB모음", "lina_life_web_data.db")
+        with DatabaseManager(db_name=db_file_path) as db_manager:
+            saved_count = db_manager.save_data(structured_rows_to_save)
+            print(f"\n총 {saved_count}건의 데이터를 '{db_file_path}'에 저장했습니다.")
+    else:
+        print("\nDatabaseManager를 import할 수 없어 데이터를 저장할 수 없습니다.")
