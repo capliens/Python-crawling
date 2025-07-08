@@ -9,7 +9,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
-import re  # 정규표현식 사용을 위해 import
+import re # 정규표현식 사용을 위해 import
 from datetime import datetime
 
 # 프로젝트 루트 경로를 sys.path에 추가하여 모듈 임포트 가능하게 함
@@ -236,7 +236,7 @@ def crawl_all_hi_product_data_optimized(url):
             else:
                 print("DB에 저장할 유효한 상품 문서 정보가 없습니다.")
         else:
-            print("DatabaseManager가 초기화되지 않아 DB 저장을 건너뜁니다.")
+            print("DatabaseManager가 초기화되지 않아 DB 저장을 건너_ㅂ니다.")
 
 
 def crawl_product_names_and_data_js_click(driver_instance, all_product_data_list):
@@ -330,7 +330,7 @@ def extract_table_data(driver_instance):
                 def process_doc_link(col_index, doc_type_key):
                     pdf_extracted_link = "N/A"
                     new_window_handle = None  # 새 창 핸들을 저장할 변수 초기화
-                    link_elem = None  # link_elem 초기화
+                    link_elem = None # link_elem 초기화
 
                     try:
                         link_elem = cols[col_index].find_element(By.TAG_NAME, "a")
@@ -342,18 +342,26 @@ def extract_table_data(driver_instance):
 
                         # 링크가 유효하고 onclick 속성이 있는 경우에만 처리
                         if not is_disabled and link_onclick and link_onclick.strip() != "" and "javascript:void(0)" in link_elem.get_attribute("href"):
+                            
+                            # 링크 클릭 전에 브라우저 캐시 및 저장소 명시적 초기화
+                            print(f"    └─ [{doc_type_key}] 링크 클릭 전 브라우저 캐시 및 저장소 초기화 시도...")
+                            driver_instance.execute_script("window.localStorage.clear();")
+                            driver_instance.execute_script("window.sessionStorage.clear();")
+                            driver_instance.execute_script("if (caches) { caches.keys().then(names => { for (let name of names) { caches.delete(name); console.log('Cache ' + name + ' deleted.'); } }); }")
+                            print(f"    └─ [{doc_type_key}] 브라우저 캐시 및 저장소 초기화 완료.")
 
-                            # 클릭 전 seleniumwire 요청 목록을 확실히 비움
-                            driver_instance.requests.clear()
+                            # seleniumwire 요청 목록 초기화 (이전과 동일하게 유지)
+                            # 이 방식에서는 seleniumwire.requests를 사용하지 않으므로, 이 줄은 필수는 아니지만 안전을 위해 유지합니다.
+                            driver_instance.requests.clear() 
                             print(f"    └─ [{doc_type_key}] 클릭 전 seleniumwire 요청 목록 초기화 완료.")
 
                             current_window_handles_before_click = driver_instance.window_handles
                             print(f"    └─ [{doc_type_key}] 클릭 전 탭 수: {len(current_window_handles_before_click)}")
-
+                            
                             # JavaScript 클릭 시도
                             driver_instance.execute_script("arguments[0].click();", link_elem)
                             print(f"    └─ [{doc_type_key}] 링크 JavaScript 클릭 실행.")
-
+                            
                             try:
                                 # 새 창이 열릴 때까지 기다림
                                 WebDriverWait(driver_instance, 15).until(
@@ -363,47 +371,33 @@ def extract_table_data(driver_instance):
                                 new_window_handles = [handle for handle in driver_instance.window_handles if handle != original_window]
                                 if new_window_handles:
                                     new_window_handle = new_window_handles[0]
-
-                                    # 새 창으로 전환하기 전에 핸들이 유효한지 확인
+                                    
                                     if new_window_handle in driver_instance.window_handles:
                                         driver_instance.switch_to.window(new_window_handle)
-                                        print(f"    └─ [{doc_type_key}] 새 탭 '{new_window_handle}'으로 전환 완료. 로딩 대기.")
-                                        time.sleep(2)  # 전환 후 충분히 대기하여 브라우저 안정화 및 PDF 요청 발생 시간 부여
-
-                                        # PDF 요청 URL 패턴
-                                        pdf_request_pattern = re.compile(
-                                            r'https:\/\/www\.hi\.co\.kr\/FileActionServlet\/preview\/0\/data\/\d{6}\/[a-f0-9]{32}\.pdf')
-
-                                        # *** 중요 수정: wait_for_request 대신 requests 목록 직접 확인 ***
+                                        print(f"    └─ [{doc_type_key}] 새 탭 '{new_window_handle}'으로 전환 완료.")
+                                        
+                                        # >>> 변경된 부분 시작: URL이 .pdf로 끝나는지 확인하는 패턴으로 수정 <<<
+                                        # .pdf로 끝나는 모든 URL을 PDF 링크로 간주
+                                        pdf_url_pattern = re.compile(r'.*\.pdf$', re.IGNORECASE) 
+                                        print(f"    └─ [{doc_type_key}] 새 탭의 URL이 '.pdf'로 끝날 때까지 대기 시작 (최대 20초).")
+                                        
                                         try:
-                                            # 새 탭 전환 후 requests를 다시 한번 비움
-                                            driver_instance.requests.clear()
-                                            print(f"    └─ [{doc_type_key}] 새 탭 전환 후 requests 다시 초기화. 새로운 PDF 요청 대기 시작.")
-
-                                            # 최대 20초 동안 0.5초 간격으로 새로운 PDF 요청이 도착했는지 확인
-                                            found_correct_pdf_request = None
-                                            start_time = time.time()
-                                            while time.time() - start_time < 20:
-                                                # 모든 요청을 역순으로 탐색 (가장 최근 요청부터 확인)
-                                                for request in reversed(driver_instance.requests):
-                                                    if pdf_request_pattern.match(request.url) and request.response and request.response.status_code == 200:
-                                                        # PDF 응답의 Content-Type도 확인하여 정확성 높임
-                                                        if 'Content-Type' in request.response.headers and 'application/pdf' in request.response.headers['Content-Type']:
-                                                            found_correct_pdf_request = request
-                                                            break  # 올바른 요청을 찾았으니 루프 종료
-                                                if found_correct_pdf_request:
-                                                    break  # 바깥 루프도 종료
-                                                time.sleep(0.5)  # 0.5초 대기 후 다시 확인
-
-                                            if found_correct_pdf_request:
-                                                pdf_extracted_link = found_correct_pdf_request.url
-                                                print(f"    └─ [{doc_type_key}] PDF 링크 추출 성공 (직접 확인): {pdf_extracted_link}")
-                                            else:
-                                                pdf_extracted_link = "PDF 링크 찾지 못함 (요청 없음 또는 조건 불일치)"
-                                                print(f"    └─ [{doc_type_key}] PDF 요청을 직접 가로채지 못했습니다: 조건 불일치 또는 타임아웃.")
-                                        except Exception as req_e:
-                                            pdf_extracted_link = f"PDF 요청 가로채기 중 오류 (직접 확인): {req_e}"
-                                            print(f"        → [{doc_type_key}] PDF 요청 가로채기 중 예기치 않은 오류 (직접 확인): {req_e}")
+                                            # 현재 URL이 PDF 패턴과 일치하고 'about:blank'가 아닌 경우를 기다림
+                                            WebDriverWait(driver_instance, 20).until(
+                                                lambda driver: pdf_url_pattern.match(driver.current_url) and driver.current_url != "about:blank"
+                                            )
+                                            pdf_extracted_link = driver_instance.current_url
+                                            print(f"    └─ [{doc_type_key}] PDF 링크 추출 성공 (새 탭 URL 확인): {pdf_extracted_link}")
+                                        except TimeoutException:
+                                            pdf_extracted_link = "PDF 링크 추출 실패 (새 탭 URL 대기 타임아웃)"
+                                            print(f"        → [{doc_type_key}] 새 탭 URL이 '.pdf'로 끝나지 않거나 타임아웃 발생.")
+                                            # 타임아웃 시 현재 URL이라도 가져와서 디버깅에 활용
+                                            print(f"        → 현재 새 탭 URL: {driver_instance.current_url}")
+                                        except Exception as url_check_e:
+                                            pdf_extracted_link = f"URL 확인 중 오류: {url_check_e}"
+                                            print(f"        → [{doc_type_key}] URL 확인 중 예기치 않은 오류: {url_check_e}")
+                                        # >>> 변경된 부분 끝 <<<
+                                        
                                     else:
                                         pdf_extracted_link = "새 창 핸들이 유효하지 않음"
                                         print(f"        → [{doc_type_key}] 새 창 핸들이 유효하지 않습니다.")
@@ -461,8 +455,8 @@ def extract_table_data(driver_instance):
                         # (즉, 탭이 3개 이상 열린 비정상적인 상황에 대한 비상 처리)
                         elif driver_instance.current_window_handle != original_window:
                             print(f"Warning: 비정상적인 탭 상태 감지. "
-                                  f"현재 탭: {driver_instance.current_window_handle}, "
-                                  f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
+                                    f"현재 탭: {driver_instance.current_window_handle}, "
+                                    f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
                             try:
                                 # 원래 창을 제외한 모든 탭을 강제로 닫기 시도
                                 for handle in driver_instance.window_handles:
@@ -479,11 +473,8 @@ def extract_table_data(driver_instance):
                                     print("Warning: 비정상적인 탭 정리 후 원래 창 핸들이 유효하지 않아 복귀 실패.")
                             except Exception as clean_e:
                                 print(f"Error: 비정상적인 탭 정리 중 오류 발생: {clean_e}")
-                        elif new_window_handle is None:  # 새 창이 아예 열리지 않은 경우
+                        elif new_window_handle is None: # 새 창이 아예 열리지 않은 경우
                             print(f"    └─ [{doc_type_key}] 새 탭이 열리지 않았습니다. 원래 탭 유지.")
-
-                        # 이 위치에서는 requests.clear()를 호출하지 않습니다.
-                        # requests.clear()는 각 링크 클릭 직전에만 호출되어야 합니다.
                     doc_info[doc_type_key]["link"] = pdf_extracted_link
 
                 # 문서 유형별 링크 처리 호출 (상품설명서 제외)
