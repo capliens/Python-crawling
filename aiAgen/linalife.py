@@ -1,4 +1,5 @@
 # 라이나생명보험/판매중단페이지
+import time
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import Options
@@ -7,345 +8,350 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
-import time
-import re
-
-# crawl_lina_product_announcements_by_type 함수는 드라이버를 인자로 받도록 변경
 
 
-def crawl_lina_product_announcements_by_type(driver, url, main_or_rider_tab="주보험"):
+def wait_for_spinner_to_disappear(driver, timeout=10):
     """
-    리나 생명보험 웹사이트에서 판매 중인 상품 공시 정보를 크롤링합니다.
-    "주보험" 또는 "특약" 탭을 선택한 후, 모든 보험 유형 탭을 순회하며
-    각 상품을 클릭하여 상세 정보를 가져오고, 테이블 내 PDF 다운로드 링크를 추출한 후
-    '이전 화면' 버튼을 클릭하여 목록으로 돌아옵니다.
-
-    Args:
-        driver (webdriver.Chrome): 이미 초기화된 Selenium WebDriver 인스턴스.
-        url (str): 크롤링할 웹 페이지의 URL.
-        main_or_rider_tab (str): 상위 탭 ('주보험' 또는 '특약').
-
-    Returns:
-        dict: 각 보험 유형별 상품 리스트를 포함하는 딕셔너리.
-              각 상품은 상세 페이지의 정확한 상품명, 링크, 그리고 모든 상세 테이블 정보('details_tables')를 포함합니다.
+    (선택 사항) 로딩 스피너가 사라질 때까지 기다립니다.
+    스피너 요소의 정확한 CSS 셀렉터를 파악해야 합니다.
     """
-    all_product_data = {}
+    pass
 
+
+def _scrape_products_by_type(driver, select_type, pane_id_prefix):
+    """
+    지정된 유형(주보험/특약) 내의 모든 상품군과 그 안의 모든 상품 상세 정보를 스크랩하는 내부 함수.
+    :param driver: Selenium WebDriver 인스턴스
+    :param select_type: '주보험' 또는 '특약'
+    :param pane_id_prefix: 해당 유형의 패널 ID 접두사 (예: 'pane-B' 또는 'pane-R')
+    :return: 현재 유형에서 스크랩된 데이터 리스트
+    """
+    scraped_data_for_type = []
+
+    # --- 1단계: 유형 탭 선택 ---
+    type_xpath = f'//*[@id="tab-{pane_id_prefix.split("-")[1]}"]'  # pane-B -> B, pane-R -> R
+    print(f"\n--- '{select_type}' 탭 선택 시작 ---")
     try:
-        # 초기 페이지 로딩 대기 시간: 'wrapper' 클래스를 가진 div가 로드될 때까지 기다립니다.
-        # 이 요소는 페이지의 큰 컨테이너이므로, 전체 페이지가 준비되었음을 나타내는 데 더 적합합니다.
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.wrapper"))
+        type_element = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, type_xpath))
         )
-        print("초기 페이지 로딩 완료.")
-        time.sleep(2)  # 추가적인 안정화를 위한 대기
-
-        # 4. 상위 탭 선택 ('주보험' 또는 '특약') - 새 선택자 적용
-        # 메인 탭: a.tab-item
-        main_tab_xpath = f"//a[@class='tab-item' and normalize-space(text())='{main_or_rider_tab}']"
-        try:
-            target_main_tab = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, main_tab_xpath))
-            )
-            target_main_tab.click()
-            print(f"'{main_or_rider_tab}' 탭을 클릭했습니다.")
-            time.sleep(3)  # 탭 전환 후 페이지 안정화 대기
-        except TimeoutException:
-            print(f"'{main_or_rider_tab}' 상위 탭을 찾거나 클릭할 수 없습니다. (시간 초과)")
-            return {}
-        except Exception as e:
-            print(f"상위 탭 클릭 중 오류 발생: {e}")
-            return {}
-
-        # 5. 모든 보험 유형 탭 순회 - 새 선택자 적용
-        # 보험 유형 탭: ul.tab-type-list a.btn-item
+        driver.execute_script("arguments[0].click();", type_element)
+        print(f"'{select_type}' 탭 JavaScript 클릭 완료.")
         WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "ul.tab-type-list a.btn-item"))
+            EC.presence_of_element_located((By.XPATH, f'//*[@id="{pane_id_prefix}"]/div[1]/button'))
         )
-
-        tab_buttons_raw = driver.find_elements(By.CSS_SELECTOR, "ul.tab-type-list a.btn-item")
-        tab_names = []
-        for btn in tab_buttons_raw:
-            tab_text = btn.text.strip()
-            if tab_text:
-                tab_names.append(tab_text)
-
-        print(f"발견된 보험 유형 탭: {tab_names}")
-
-        for tab_name in tab_names:
-            print(f"\n--- '{tab_name}' 탭 크롤링 시작 ---")
-            products_in_type = []
-            try:
-                # 탭을 클릭하기 위해 다시 해당 탭 요소를 찾습니다.
-                current_type_tab_xpath = f"//ul[@class='tab-type-list']/li/a[@class='btn-item' and normalize-space(text())='{tab_name}']"
-                current_tab_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, current_type_tab_xpath))
-                )
-                current_tab_button.click()
-                print(f"'{tab_name}' 유형 탭을 클릭했습니다.")
-                time.sleep(3)  # 유형 탭 전환 후 페이지 안정화 대기
-
-                # 6. 각 유형 탭 내의 상품 목록 찾기 - 새 선택자 적용
-                # 개별 상품 목록 버튼: a.prod-item
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.prod-list-group a.prod-item"))
-                )
-                product_list_elements = driver.find_elements(By.CSS_SELECTOR, "div.prod-list-group a.prod-item")
-
-                initial_product_info = []
-                for a_elem in product_list_elements:
-                    try:
-                        product_name_elem = a_elem.find_element(By.CSS_SELECTOR, "div.prod-name")
-                        product_name = product_name_elem.text.strip()
-                        initial_product_info.append({'name': product_name, 'link': url})
-                    except NoSuchElementException:
-                        print(f"상품명 (div.prod-name)을 찾을 수 없습니다: {a_elem.text}")
-                        continue
-                    except Exception as e:
-                        print(f"초기 상품 정보 추출 중 오류 발생: {e}")
-                        continue
-
-                print(f"'{tab_name}' 탭에서 {len(initial_product_info)}개의 상품 발견.")
-
-                # 각 상품을 클릭하여 상세 정보 추출
-                for i, product_info in enumerate(initial_product_info):
-                    current_product_details = {
-                        'name': "상품명 없음",  # 상세 페이지에서 정확한 상품명으로 업데이트될 예정
-                        'link': product_info['link'],
-                        'details_tables': []  # 여러 테이블 데이터를 담을 리스트
-                    }
-                    try:
-                        # 상품 버튼을 다시 찾아서 클릭 (StaleElementReferenceException 방지)
-                        # 여기서는 initial_product_info의 이름을 사용해 버튼을 찾습니다.
-                        # 상품명 `div.prod-name`을 포함하는 `a.prod-item`을 찾습니다.
-                        product_button_xpath = f"//a[@class='prod-item'][.//div[@class='prod-name' and normalize-space(text())='{product_info['name']}']]"
-                        product_button = WebDriverWait(driver, 10).until(
-                            EC.element_to_be_clickable((By.XPATH, product_button_xpath))
-                        )
-
-                        print(f"\n  클릭: {product_info['name']}")
-
-                        # 상품 클릭 (현재 prod-item은 링크이므로 바로 클릭합니다. is-open 클래스 확인 불필요)
-                        product_button.click()
-                        time.sleep(3)  # 상세 내용 로딩 대기
-
-                        # 상세 페이지 상단의 정확한 상품명 가져오기 - 새 선택자 적용
-                        try:
-                            detail_page_product_name_element = WebDriverWait(driver, 5).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, "h2.h-title"))
-                            )
-                            current_product_details['name'] = detail_page_product_name_element.text.strip()
-                            print(f"  상세 페이지에서 확인된 상품명: {current_product_details['name']}")
-                        except TimeoutException:
-                            print("  상세 페이지 상품명 (h2.h-title) 로드 시간 초과.")
-                        except NoSuchElementException:
-                            print("  상세 페이지 상품명 (h2.h-title) 요소를 찾을 수 없습니다.")
-                        except Exception as e:
-                            print(f"  상세 페이지 상품명 추출 중 오류 발생: {e}")
-
-                        # 7. 상세 내용 **모든** 테이블 추출 - 새 선택자 적용
-                        # div.tbl-list-box 내의 모든 table 찾기
-                        all_detail_tables_selector = "div.tbl-list-box table"
-
-                        try:
-                            detail_table_elements = WebDriverWait(driver, 5).until(
-                                EC.presence_of_all_elements_located((By.CSS_SELECTOR, all_detail_tables_selector))
-                            )
-                            print(f"  총 {len(detail_table_elements)}개의 상세 테이블 발견.")
-
-                            for table_idx, table_elem in enumerate(detail_table_elements):
-                                table_data = []
-                                try:
-                                    table_body = table_elem.find_element(By.TAG_NAME, "tbody")
-                                    rows = table_body.find_elements(By.TAG_NAME, "tr")
-
-                                    for row_idx, row in enumerate(rows):
-                                        row_info = {}
-                                        cells = row.find_elements(By.TAG_NAME, "td")
-                                        # 셀의 개수가 최소한 판매기간 + 3가지 PDF 버튼을 포함하는지 확인
-                                        if len(cells) >= 4:
-                                            row_info['판매기간'] = cells[0].text.strip()
-
-                                            doc_types = ['상품요약서', '사업방법서', '약관']
-                                            # 각 문서 타입에 대한 PDF 다운로드 링크 추출
-                                            for j, doc_type in enumerate(doc_types):
-                                                # PDF 버튼은 <td> 안에 있는 a.btn-down 입니다.
-                                                try:
-                                                    pdf_link_elem = cells[j + 1].find_element(By.CSS_SELECTOR, "a.btn-down")
-                                                    pdf_link = pdf_link_elem.get_attribute("href")
-                                                    row_info[doc_type] = pdf_link if pdf_link else "다운로드 링크 없음"
-                                                except NoSuchElementException:
-                                                    row_info[doc_type] = "PDF 다운로드 버튼 없음"
-                                                except Exception as err:
-                                                    print(f"      테이블 {table_idx + 1}, 행 {row_idx + 1} - '{doc_type}' PDF 링크 추출 중 오류: {err}")
-                                                    row_info[doc_type] = f"링크 추출 오류: {err}"
-                                        table_data.append(row_info)
-                                    current_product_details['details_tables'].append(table_data)
-
-                                except NoSuchElementException:
-                                    print(f"  테이블 {table_idx + 1}의 tbody 또는 tr/td를 찾을 수 없습니다.")
-                                    current_product_details['details_tables'].append(f"테이블 {table_idx + 1} 내용 없음")
-                                except Exception as e:
-                                    print(f"  테이블 {table_idx + 1} 처리 중 오류 발생: {e}")
-                                    current_product_details['details_tables'].append(f"테이블 {table_idx + 1} 오류: {e}")
-
-                        except TimeoutException:
-                            print(f"  '{current_product_details['name']}' 상세 테이블 로드 시간 초과.")
-                            current_product_details['details_tables'] = "상세 테이블 로드 실패 (시간 초과)"
-                        except NoSuchElementException:
-                            print(f"  '{current_product_details['name']}' 상세 테이블 요소를 찾을 수 없습니다.")
-                            current_product_details['details_tables'] = "상세 테이블 요소 없음"
-                        except Exception as e:
-                            print(f"  '{current_product_details['name']}' 상세 테이블 처리 중 오류 발생: {e}")
-                            current_product_details['details_tables'] = f"상세 테이블 오류: {e}"
-
-                        # 8. '이전 화면' 버튼 클릭하여 목록으로 돌아가기 - 새 선택자 적용
-                        # 이전화면 버튼: a.btn-prev
-                        back_button_selector = "a.btn-prev"
-                        try:
-                            back_button = WebDriverWait(driver, 10).until(
-                                EC.element_to_be_clickable((By.CSS_SELECTOR, back_button_selector))
-                            )
-                            back_button.click()
-                            print(f"  '{current_product_details['name']}' 상세 페이지에서 '이전화면'으로 돌아갑니다.")
-                            time.sleep(3)
-
-                            # 이전 화면으로 돌아온 후, 상품 목록이 다시 로드될 때까지 기다립니다.
-                            WebDriverWait(driver, 10).until(
-                                EC.presence_of_element_located((By.CSS_SELECTOR, "div.prod-list-group"))
-                            )
-
-                        except TimeoutException:
-                            print(f"  '이전화면' 버튼을 찾거나 클릭할 수 없습니다 (시간 초과). 현재 페이지에 머무릅니다.")
-                        except NoSuchElementException:
-                            print(f"  '이전화면' 버튼 요소를 찾을 수 없습니다. 현재 페이지에 머무릅니다.")
-                        except Exception as e:
-                            print(f"  '이전화면' 버튼 클릭 중 예상치 못한 오류 발생: {e}. 현재 페이지에 머무릅니다.")
-
-                    except StaleElementReferenceException:
-                        print(f"  상품 버튼 참조가 만료되었습니다. 스킵합니다. (이전 상품명: {product_info['name']})")
-                        continue
-                    except TimeoutException:
-                        print(f"  상품 클릭 또는 로딩 시간 초과. (상품명: {product_info['name']})")
-                    except NoSuchElementException:
-                        print(f"  상품 클릭 시 요소를 찾을 수 없습니다. (상품명: {product_info['name']})")
-                    except Exception as e:
-                        print(f"  상품 상세 처리 중 예상치 못한 오류 발생: {e}. (상품명: {product_info['name']})")
-
-                    products_in_type.append(current_product_details)
-
-                all_product_data[tab_name] = products_in_type
-                print(f"'{tab_name}' 탭 크롤링 완료. 상품 수: {len(products_in_type)}")
-
-            except TimeoutException:
-                print(f"'{tab_name}' 탭을 찾거나 클릭할 수 없습니다 (시간 초과).")
-            except NoSuchElementException:
-                print(f"'{tab_name}' 탭 내의 요소를 찾을 수 없습니다.")
-            except Exception as e:
-                print(f"'{tab_name}' 탭 처리 중 예상치 못한 오류 발생: {e}")
-
-        return all_product_data
+        print("탭 클릭 후 상품군 버튼 로딩 완료.")
 
     except TimeoutException:
-        print("초기 페이지 로딩 시간 초과.")
-        return {}
+        print(f"ERROR: '{select_type}' 탭을 클릭하는 중 타임아웃이 발생했습니다.")
+        return []
     except NoSuchElementException:
-        print("초기 페이지에서 필요한 요소를 찾을 수 없습니다. 셀렉터를 확인하세요.")
-        return {}
+        print(f"ERROR: '{select_type}' 탭 요소를 찾을 수 없습니다. XPath: {type_xpath}")
+        return []
+    except StaleElementReferenceException:
+        print(f"WARNING: '{select_type}' 탭 요소에 대한 StaleElementReferenceException 발생. 다시 시도합니다.")
+        type_element = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, type_xpath))
+        )
+        driver.execute_script("arguments[0].click();", type_element)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, f'//*[@id="{pane_id_prefix}"]/div[1]/button'))
+        )
+    print(f"--- '{select_type}' 탭 선택 완료 ---")
+
+    # --- 2단계: 모든 상품군 순회 ---
+    group_buttons_xpath = f'//*[@id="{pane_id_prefix}"]/div[1]/button'
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.XPATH, group_buttons_xpath))
+        )
+
+        initial_group_elements = driver.find_elements(By.XPATH, group_buttons_xpath)
+        num_groups = len(initial_group_elements)
+        print(f"\n총 {num_groups}개의 상품군을 찾았습니다. 각 상품군을 순회합니다.")
+
+        for g_idx in range(num_groups):
+            # 상품군 버튼이 StaleElementReferenceException을 일으킬 수 있으므로, 루프마다 새로 찾습니다.
+            group_elements = WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.XPATH, group_buttons_xpath))
+            )
+
+            if g_idx >= len(group_elements):
+                print(f"WARNING: 상품군 인덱스 {g_idx}를 찾을 수 없습니다. (리스트 크기: {len(group_elements)}). 상품군 루프를 종료합니다.")
+                break
+
+            group_element_to_click = group_elements[g_idx]
+            group_text = group_element_to_click.text
+            print(f"\n--- 상품군 '{group_text}' ({g_idx + 1}/{num_groups}) 순회 시작 ({select_type} 탭) ---")
+
+            try:
+                driver.execute_script("arguments[0].click();", group_element_to_click)
+                print(f"상품군 '{group_text}' JavaScript 클릭 완료.")
+
+                product_list_ul_xpath = f'//*[@id="{pane_id_prefix}"]/div[2]/div[2]/ul'
+                WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.XPATH, product_list_ul_xpath))
+                )
+                print("상품군 클릭 후 상품 목록 UL 로딩 완료.")
+
+                # --- 3단계: 모든 상품 순회 및 상세 정보 추출 ---
+                product_list_items_xpath = f'{product_list_ul_xpath}/li'
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_all_elements_located((By.XPATH, product_list_items_xpath))
+                )
+
+                initial_product_elements = driver.find_elements(By.XPATH, product_list_items_xpath)
+                num_products = len(initial_product_elements)
+                print(f"\n총 {num_products}개의 상품을 찾았습니다. 각 상품의 상세 정보를 추출합니다.")
+
+                for i in range(num_products):
+                    print(f"\n--- 상품 {i + 1}/{num_products} 상세 정보 추출 시작 (상품군: {group_text}, 유형: {select_type}) ---")
+
+                    product_elements = WebDriverWait(driver, 10).until(
+                        EC.presence_of_all_elements_located((By.XPATH, product_list_items_xpath))
+                    )
+
+                    if i >= len(product_elements):
+                        print(f"WARNING: 상품 목록 인덱스 {i}를 찾을 수 없습니다. (리스트 크기: {len(product_elements)}). 루프를 종료합니다.")
+                        break
+
+                    product_button = product_elements[i].find_element(By.TAG_NAME, "button")
+                    product_name_on_list = product_button.text
+
+                    print(f"상품 '{product_name_on_list}' 클릭 시도...")
+                    driver.execute_script("arguments[0].click();", product_button)
+                    print(f"상품 '{product_name_on_list}' JavaScript 클릭 완료. 상세 페이지로 이동합니다.")
+
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".c-title_title.fs-24 span"))
+                    )
+                    print("상세 페이지 로딩 완료.")
+
+                    # --- 4단계: 상세 페이지 내 모든 상품 섹션 정보 추출 ---
+                    all_extracted_products_data_for_current_page = []
+
+                    all_product_sections_xpath = f'//*[@id="{pane_id_prefix}"]/div[@class="l-section gap-bottom" and not(.//div[@class="bottom-buttons single"])]'
+
+                    try:
+                        WebDriverWait(driver, 20).until(
+                            EC.presence_of_all_elements_located((By.XPATH, all_product_sections_xpath))
+                        )
+                        product_sections = driver.find_elements(By.XPATH, all_product_sections_xpath)
+
+                        if not product_sections:
+                            print("WARNING: 상세 페이지에서 상품 섹션을 찾을 수 없습니다. XPath를 확인하세요.")
+
+                        for section_idx, section in enumerate(product_sections):
+                            current_section_data = {}
+
+                            try:
+                                product_name_element = section.find_element(By.CSS_SELECTOR, ".c-title_title.fs-24 span")
+                                current_section_data["상품명"] = product_name_element.text.strip()
+                                # print(f"  추출 중인 상품명: {current_section_data['상품명']}")
+                            except NoSuchElementException:
+                                print("WARNING: 상품 섹션에서 상품명 요소를 찾을 수 없습니다.")
+                                current_section_data["상품명"] = "N/A"
+
+                            section_tables_xpath = './/div[@class="l-table"]//table'
+
+                            try:
+                                tables_in_section = section.find_elements(By.XPATH, section_tables_xpath)
+
+                                current_section_data["판매기간_및_문서"] = []
+                                if not tables_in_section:
+                                    print(f"WARNING: 상품 '{current_section_data['상품명']}' 섹션에서 테이블을 찾을 수 없습니다.")
+
+                                for table_in_section_idx, table in enumerate(tables_in_section):
+                                    try:
+                                        rows = table.find_elements(By.TAG_NAME, "tr")
+
+                                        if not rows:
+                                            try:
+                                                table_body = table.find_element(By.TAG_NAME, "tbody")
+                                                rows = table_body.find_elements(By.TAG_NAME, "tr")
+                                            except NoSuchElementException:
+                                                pass
+
+                                        for row in rows:
+                                            row_data = {}
+                                            try:
+                                                sales_period_cell = row.find_element(By.CSS_SELECTOR, "td:nth-child(1) .cell")
+                                                row_data["판매기간"] = sales_period_cell.text.strip()
+
+                                                doc_types = ["상품요약서", "사업방법서", "약관"]
+                                                for j, doc_type in enumerate(doc_types):
+                                                    try:
+                                                        doc_button = row.find_element(By.CSS_SELECTOR, f"td:nth-child({j + 2}) button.down-button")
+                                                        row_data[doc_type] = "PDF 다운로드 버튼 존재"
+                                                    except NoSuchElementException:
+                                                        row_data[doc_type] = "다운로드 링크 없음"
+                                            except Exception as e:
+                                                continue
+
+                                            if row_data.get("판매기간"):
+                                                current_section_data["판매기간_및_문서"].append(row_data)
+
+                                    except Exception as e:
+                                        print(f"WARNING: 상품 '{current_section_data['상품명']}' 테이블 {table_in_section_idx + 1} 처리 중 예상치 못한 오류 발생: {e}")
+
+                                    for item in current_section_data["판매기간_및_문서"]:
+                                        print(f"    판매기간: {item.get('판매기간', 'N/A')}")
+                                        print(f"      상품요약서: {item.get('상품요약서', 'N/A')}")
+                                        print(f"      사업방법서: {item.get('사업방법서', 'N/A')}")
+                                        print(f"      약관: {item.get('약관', 'N/A')}")
+
+                            except Exception as e:
+                                print(f"WARNING: 상품 '{current_section_data['상품명']}' 섹션 내 테이블 추출 중 오류 발생: {e}")
+
+                            all_extracted_products_data_for_current_page.append(current_section_data)
+
+                    except TimeoutException:
+                        print("WARNING: 상세 페이지 내 상품 섹션 로딩 중 타임아웃이 발생했습니다.")
+                    except NoSuchElementException:
+                        print("WARNING: 상세 페이지 내 상품 섹션 요소를 찾을 수 없습니다.")
+                    except Exception as e:
+                        print(f"ERROR: 상세 페이지 모든 상품 정보 추출 중 예상치 못한 오류 발생: {e}")
+
+                    scraped_data_for_type.append({
+                        "유형": select_type,
+                        "상품군": group_text,
+                        "클릭한_상품명_목록": product_name_on_list,
+                        "상세_페이지_내_추출된_상품들": all_extracted_products_data_for_current_page
+                    })
+
+                    # --- 5단계: 이전 화면으로 돌아가기 ---
+                    try:
+                        back_button_xpath = f'//*[@id="{pane_id_prefix}"]//button[span[contains(text(), "이전화면")]]'
+                        print(f"\n'이전화면' 버튼 클릭 시도: {back_button_xpath}")
+
+                        back_button = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, back_button_xpath))
+                        )
+                        driver.execute_script("arguments[0].click();", back_button)
+                        print("'이전화면' JavaScript 클릭 완료. 상품 목록 페이지로 돌아갑니다.")
+
+                        WebDriverWait(driver, 30).until(
+                            EC.presence_of_element_located((By.XPATH, product_list_ul_xpath))
+                        )
+                        print(f"상품 목록 페이지 로딩 완료. 다음 상품 ({i + 2}/{num_products})으로 이동합니다.")
+
+                    except TimeoutException:
+                        print("ERROR: '이전화면' 버튼을 클릭하거나 상품 목록 페이지 로딩 중 타임아웃이 발생했습니다.")
+                        print(f"확인 필요: '이전화면' 버튼 XPath: {back_button_xpath} 또는 상품 목록 UL XPath: {product_list_ul_xpath}")
+                        break
+                    except NoSuchElementException:
+                        print("ERROR: '이전화면' 버튼 요소를 찾을 수 없습니다. XPath를 확인하세요.")
+                        break
+                    except StaleElementReferenceException:
+                        print("WARNING: '이전화면' 버튼 요소에 대한 StaleElementReferenceException 발생. 다시 시도합니다.")
+                        back_button = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.XPATH, back_button_xpath))
+                        )
+                        driver.execute_script("arguments[0].click();", back_button)
+                        WebDriverWait(driver, 30).until(
+                            EC.presence_of_element_located((By.XPATH, product_list_ul_xpath))
+                        )
+                        print(f"상품 목록 페이지 로딩 완료. 다음 상품 ({i + 2}/{num_products})으로 이동합니다.")
+                    except Exception as e:
+                        print(f"ERROR: '이전화면' 버튼 처리 중 예상치 못한 오류 발생: {e}")
+                        break
+
+                print(f"--- 상품군 '{group_text}' 내 모든 상품 추출 완료 ({select_type} 탭) ---")
+
+            except TimeoutException:
+                print(f"ERROR: 상품군 '{group_text}' 클릭 후 상품 목록 UL 로딩 중 타임아웃이 발생했습니다.")
+            except NoSuchElementException:
+                print(f"ERROR: 상품군 '{group_text}' 요소를 찾을 수 없습니다.")
+                print("해당 인덱스에 상품군이 없거나 XPath가 잘못되었을 수 있습니다.")
+            except IndexError:
+                print(f"ERROR: 잘못된 상품군 인덱스({g_idx + 1})입니다. 유효한 인덱스를 입력해주세요.")
+            except Exception as e:
+                print(f"ERROR: 상품군 선택 또는 상품 목록 순회 중 예상치 못한 오류 발생: {e}")
+
+    except TimeoutException:
+        print(f"ERROR: 상품군 버튼 로딩 중 타임아웃이 발생했습니다.")
+    except NoSuchElementException:
+        print(f"ERROR: 상품군 버튼 요소를 찾을 수 없습니다. XPath: {group_buttons_xpath}")
     except Exception as e:
-        print(f"크롤링 중 예상치 못한 치명적인 오류 발생: {e}")
-        return {}
+        print(f"ERROR: 상품군 순회 중 예상치 못한 오류 발생: {e}")
+
+    return scraped_data_for_type
 
 
-# 메인 실행 부분
-if __name__ == "__main__":
-    target_url = "https://www.lina.co.kr/disclosure/product-public-announcement/product-on-sales?key=0"
-
-    # 1. Chrome 옵션 설정
+def scrape_all_lina_products(url):
+    """
+    지정된 URL의 리나생명 웹사이트에서 '주보험'과 '특약' 탭의 모든 상품 정보를 스크랩하는 메인 함수.
+    :param url: 스크랩할 웹사이트 URL
+    :return: 모든 스크랩된 데이터를 담은 리스트
+    """
     chrome_options = Options()
-    # 크롤링 시 브라우저 창을 띄우지 않으려면 다음 주석을 해제하세요.
+    # 크롤링 동작을 눈으로 확인하려면 아래 주석을 해제하세요.
     # chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920x1080")
+    chrome_options.add_argument("--window-size=1920,1080")
 
-    # 2. WebDriver 설정 및 초기화 (메인 블록에서 한 번만)
     service = Service(ChromeDriverManager().install())
+
     driver = None
+    all_scraped_data_overall = []
+
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.get(target_url)  # 초기 URL 접속
+        driver.get(url)
 
-        print(f"'{target_url}' 에서 '주보험' 탭의 모든 보험 유형을 순회하며 상품 공시 정보를 크롤링합니다.")
-        # 드라이버 인스턴스를 함수에 전달
-        main_insurance_by_type_data = crawl_lina_product_announcements_by_type(driver, target_url, main_or_rider_tab="주보험")
+        print(f"'{url}' 페이지 로딩 중...")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+        print("페이지 로딩 완료.")
 
-        if main_insurance_by_type_data:
-            print("\n--- 주보험 각 유형별 크롤링 결과 ---")
-            for type_name, products in main_insurance_by_type_data.items():
-                print(f"\n### 보험 유형: {type_name} ({len(products)}개 상품)")
-                if products:
-                    for product in products:
-                        print(f"  상품명: {product['name']}")
-                        if product.get('details_tables') and isinstance(product['details_tables'], list):
-                            for table_idx, table_data in enumerate(product['details_tables']):
-                                if isinstance(table_data, list):
-                                    print(f"    테이블 {table_idx + 1} (행 수: {len(table_data)})")
-                                    for row_idx, row_info in enumerate(table_data):
-                                        print(f"      행 {row_idx + 1}:")
-                                        print(f"        판매기간: {row_info.get('판매기간', 'N/A')}")
-                                        print(f"        상품요약서 PDF: {row_info.get('상품요약서', 'N/A')}")
-                                        print(f"        사업방법서 PDF: {row_info.get('사업방법서', 'N/A')}")
-                                        print(f"        약관 PDF: {row_info.get('약관', 'N/A')}")
-                                else:
-                                    print(f"    테이블 {table_idx + 1} 데이터: {table_data}")
-                        else:
-                            print(f"  상세 테이블 데이터 없음: {product.get('details_tables', 'N/A')}")
-                else:
-                    print("  해당 유형에 상품이 없습니다.")
-        else:
-            print("주보험 각 유형별 크롤링된 데이터가 없습니다.")
+        # --- 최상위 루프: '주보험' 탭과 '특약' 탭 순회 ---
+        types_to_scrape = [
+            ("주보험", "pane-B"),
+            ("특약", "pane-R")
+        ]
 
-        print(f"\n{'-' * 50}\n")
+        for select_type, pane_id_prefix in types_to_scrape:
+            print(f"\n\n============= {select_type} 탭 전체 스크랩 시작 =============")
+            # 탭을 전환하기 전에 페이지 상태가 안정될 시간을 줍니다.
+            time.sleep(2)
 
-        # 특약 탭 크롤링은 페이지가 새로고침되는 등의 문제가 있을 수 있으므로
-        # 주보험 크롤링 후 드라이버 상태를 재설정하거나,
-        # 경우에 따라 새로운 드라이버 인스턴스를 사용하는 것이 안정적일 수 있습니다.
-        # 여기서는 기존 드라이버를 재사용합니다.
+            # 내부 스크래핑 함수 호출
+            data_from_current_type = _scrape_products_by_type(driver, select_type, pane_id_prefix)
+            all_scraped_data_overall.extend(data_from_current_type)
+            print(f"============= {select_type} 탭 전체 스크랩 완료 =============")
 
-        print(f"'{target_url}' 에서 '특약' 탭의 모든 보험 유형을 순회하며 상품 공시 정보를 크롤링합니다.")
-        special_agreement_by_type_data = crawl_lina_product_announcements_by_type(driver, target_url, main_or_rider_tab="특약")
-
-        if special_agreement_by_type_data:
-            print("\n--- 특약 각 유형별 크롤링 결과 ---")
-            for type_name, products in special_agreement_by_type_data.items():
-                print(f"\n### 보험 유형: {type_name} ({len(products)}개 상품)")
-                if products:
-                    for product in products:
-                        print(f"  상품명: {product['name']}")
-                        if product.get('details_tables') and isinstance(product['details_tables'], list):
-                            for table_idx, table_data in enumerate(product['details_tables']):
-                                if isinstance(table_data, list):
-                                    print(f"    테이블 {table_idx + 1} (행 수: {len(table_data)})")
-                                    for row_idx, row_info in enumerate(table_data):
-                                        print(f"      행 {row_idx + 1}:")
-                                        print(f"        판매기간: {row_info.get('판매기간', 'N/A')}")
-                                        print(f"        상품요약서 PDF: {row_info.get('상품요약서', 'N/A')}")
-                                        print(f"        사업방법서 PDF: {row_info.get('사업방법서', 'N/A')}")
-                                        print(f"        약관 PDF: {row_info.get('약관', 'N/A')}")
-                                else:
-                                    print(f"    테이블 {table_idx + 1} 데이터: {table_data}")
-                        else:
-                            print(f"  상세 테이블 데이터 없음: {product.get('details_tables', 'N/A')}")
-                else:
-                    print("  해당 유형에 상품이 없습니다.")
-        else:
-            print("특약 각 유형별 크롤링된 데이터가 없습니다.")
-
+    except TimeoutException:
+        print(f"ERROR: 페이지 로딩 중 타임아웃이 발생했습니다: {url}")
     except Exception as e:
-        print(f"메인 크롤링 프로세스 중 치명적인 오류 발생: {e}")
+        print(f"ERROR: 웹 드라이버를 초기화하거나 페이지에 접근하는 중 오류가 발생했습니다: {e}")
     finally:
         if driver:
             driver.quit()
-            print("WebDriver 종료.")
+            print("\n브라우저를 닫았습니다.")
+
+    return all_scraped_data_overall
+
+
+# 실행 예시
+if __name__ == "__main__":
+    target_url = "https://www.lina.co.kr/disclosure/product-public-announcement/product-on-sales?key=0"
+
+    print("\n--- 리나생명 웹사이트 전체 상품 정보 추출 시작 ---")
+    scraped_data = scrape_all_lina_products(target_url)
+
+    # 추출된 모든 데이터 확인 (선택 사항)
+    # print("\n--- 모든 상품의 최종 스크랩 데이터 ---")
+    # for product_entry in scraped_data:
+    #     print(f"유형: {product_entry['유형']}, 상품군: {product_entry['상품군']}, 클릭한 상품명: {product_entry['클릭한_상품명_목록']}")
+    #     for detail_item in product_entry['상세_페이지_내_추출된_상품들']:
+    #         print(f"  추출된 상세 상품명: {detail_item.get('상품명', 'N/A')}")
+    #         for doc_info in detail_item.get('판매기간_및_문서', []):
+    #             print(f"    판매기간: {doc_info.get('판매기간', 'N/A')}")
+    #             print(f"      상품요약서: {doc_info.get('상품요약서', 'N/A')}")
+    #             print(f"      사업방법서: {doc_info.get('사업방법서', 'N/A')}")
+    #             print(f"      약관: {doc_info.get('약관', 'N/A')}")
+    #     print("-" * 30)
+
+    print(f"\n총 {len(scraped_data)}개의 상품 정보를 추출했습니다.")
