@@ -1,4 +1,4 @@
-# 처브라이프/판매중단페이지/db저장은 이상없음
+# 처브라이프/판매중단페이지/링크수정
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,31 +9,35 @@ from webdriver_manager.chrome import ChromeDriverManager
 import os
 import time
 import traceback
-import sys  # sys 모듈 추가
-from datetime import datetime  # datetime 모듈 추가
+import sys
+from datetime import datetime
+import re
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-# PdfLinkExtractor 및 DatabaseManager 임포트 오류 처리를 위한 try-except 블록 추가
-try:
-    from neoali.pdf_link_scraper import PdfLinkExtractor
-except ImportError as e:
-    PdfLinkExtractor = None
-    print(f"경고: neoali.pdf_link_scraper.PdfLinkExtractor 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
-    traceback.print_exc()  # 스택 트레이스 출력
 
 try:
     from neoali.DB_save import DatabaseManager
 except ImportError as e:
     DatabaseManager = None
     print(f"경고: neoali.DB_save.DatabaseManager 모듈 임포트 실패 ({e}). DB 저장 기능이 비활성화될 수 있습니다.")
-    traceback.print_exc()  # 스택 트레이스 출력
+    traceback.print_exc()
 
 download_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "chubblife")
 if not os.path.exists(download_dir):
     os.makedirs(download_dir)
+
+# PDF 링크를 변환하는 함수 수정: 실패 시 None 반환
+
+
+def extract_and_format_link(href_value):
+    if "javascript:fn_fileDownload" in href_value:
+        match = re.search(r"fn_fileDownload\('([^']+)'\)", href_value)
+        if match:
+            file_seq_num = match.group(1)
+            return f"https://www.chubblife.co.kr/downloadFile.do?fileSeqNum={file_seq_num}"
+    return None  # 'javascript:' 형식이 아니거나 추출 실패 시 None 반환
 
 
 def get_chubblife_product_info():
@@ -51,11 +55,7 @@ def get_chubblife_product_info():
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(60)  # 전체 페이지 로드 타임아웃 설정 (최대 60초)
 
-    # PdfLinkExtractor의 요소 대기 시간을 30초로 늘리고, URL 유효성 검사를 비활성화합니다.
-    pdf_extractor = PdfLinkExtractor(driver, download_directory=download_dir, element_wait_timeout=30, verify_url_liveness=False)
-
     url = "https://www.chubblife.co.kr/front/official/sale/listSale.do"
-    # products_data = [] # 더 이상 리스트에 저장하지 않고 DB에 직접 저장
 
     # DatabaseManager 인스턴스 생성
     db_name = os.path.join(project_root, "chubb_web_data.db")  # 프로젝트 루트에 DB 파일 생성
@@ -130,7 +130,7 @@ def get_chubblife_product_info():
                             # 이전 요소가 DOM에서 사라질 때까지 짧게 대기 (없어도 진행)
                             WebDriverWait(driver, 10).until(EC.staleness_of(old_product_elements[0]))
                         except TimeoutException:
-                            print("  이전 상품 목록이 사라지지 않았지만, 새로운 목록 로드를 시도합니다.")
+                            print("   이전 상품 목록이 사라지지 않았지만, 새로운 목록 로드를 시도합니다.")
                             pass  # 이전 목록이 완전히 사라지지 않아도 다음 단계로 진행
 
                     # 새로운 탭의 상품 목록이 나타날 때까지 대기
@@ -172,21 +172,21 @@ def get_chubblife_product_info():
             # --- 페이지네이션 처리 ---
             current_page_num = 1
             while True:
-                print(f"  스크래핑 페이지: {current_page_num}")
+                print(f"   스크래핑 페이지: {current_page_num}")
 
                 product_elements = driver.find_elements(By.CSS_SELECTOR, product_rows_selector)
                 if not product_elements:
-                    print(f"  페이지 {current_page_num}에 상품이 없습니다. 페이지네이션 종료.")
+                    print(f"   페이지 {current_page_num}에 상품이 없습니다. 페이지네이션 종료.")
                     break
                 else:
-                    print(f"  현재 페이지에서 {len(product_elements)}개의 상품 발견.")
+                    print(f"   현재 페이지에서 {len(product_elements)}개의 상품 발견.")
 
                 for row_idx, row in enumerate(product_elements):
                     try:
                         product_name_element = row.find_element(By.CSS_SELECTOR, "td:nth-child(2)")
                         product_name_in_list = product_name_element.text.strip()
 
-                        # 모달창 열기 및 정보 가져오는 기능 주석 처리 (테스트를 위해)
+                        # 모달창 열기 및 정보 가져오는 기능
                         modal_trigger_selector = "td:nth-child(3) > a"  # 3번째 td 안의 a
                         modal_trigger = row.find_element(By.CSS_SELECTOR, modal_trigger_selector)
 
@@ -200,7 +200,6 @@ def get_chubblife_product_info():
                             EC.visibility_of_element_located((By.CSS_SELECTOR, modal_selector))
                         )
                         print("모달창 로드 완료.")
-                        # time.sleep(1) # 불필요한 sleep 제거
 
                         modal_element = driver.find_element(By.CSS_SELECTOR, modal_selector)
                         modal_table_all_rows = modal_element.find_elements(By.CSS_SELECTOR, "div.tableType05 > table  tr")
@@ -218,9 +217,9 @@ def get_chubblife_product_info():
                             print(f"모달 내 링크 요소 대기 중 오류: {e}")
 
                         sales_period = "N/A"
-                        summary_link = "N/A"
-                        terms_link = "N/A"
-                        business_manual_link = "N/A"
+                        summary_link = None  # None으로 초기화
+                        terms_link = None  # None으로 초기화
+                        business_manual_link = None  # None으로 초기화
 
                         current_modal_product_name = "N/A"
 
@@ -249,9 +248,9 @@ def get_chubblife_product_info():
                                 num_td_cells = len(m_td_cells)
 
                                 sales_period = "N/A"
-                                summary_link = "N/A"
-                                business_manual_link = "N/A"
-                                terms_link = "N/A"
+                                summary_link = None  # None으로 초기화
+                                business_manual_link = None  # None으로 초기화
+                                terms_link = None  # None으로 초기화
 
                                 # 상품명 셀이 rowspan을 가지고 있는지 확인 (새로운 상품 시작)
                                 is_new_product_row = False
@@ -260,36 +259,48 @@ def get_chubblife_product_info():
                                     is_new_product_row = True
 
                                 # 모달 내 테이블의 기본 XPath (tbody 제거)
-                                modal_table_base_xpath = f"//div[@id='pop_official_06']//div[contains(@class,'tableType05')]//table/thead/tr[{data_row_xpath_idx}]"
+                                modal_table_base_xpath = f"//div[@id='pop_official_06']//div[contains(@class,'tableType05')]//table/tr[{data_row_xpath_idx}]"
 
                                 if is_new_product_row:
                                     # 새로운 상품명이 시작되는 행
                                     if num_td_cells == 5:  # 상품명(rowspan) + 판매기간 + 상품요약서 + 사업방법서 + 상품약관
                                         sales_period = m_td_cells[1].text.strip()
-                                        if pdf_extractor:
-                                            summary_link_xpath = f"{modal_table_base_xpath}/td[3]/a"
-                                            summary_link = pdf_extractor.click_and_get_download_link(summary_link_xpath) or "N/A (추출 실패)"
-                                            business_manual_link_xpath = f"{modal_table_base_xpath}/td[4]/a"
-                                            business_manual_link = pdf_extractor.click_and_get_download_link(
-                                                business_manual_link_xpath) or "N/A (추출 실패)"
-                                            terms_link_xpath = f"{modal_table_base_xpath}/td[5]/a"
-                                            terms_link = pdf_extractor.click_and_get_download_link(terms_link_xpath) or "N/A (추출 실패)"
-                                        else:
-                                            summary_link = "N/A (Extractor 비활성)"
-                                            business_manual_link = "N/A (Extractor 비활성)"
-                                            terms_link = "N/A (Extractor 비활성)"
+
+                                        # Href 값 직접 추출 및 변환 적용, 실패 시 None
+                                        try:
+                                            original_href = m_td_cells[2].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            summary_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            summary_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[3].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            business_manual_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            business_manual_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[4].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            terms_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            terms_link = None  # 예외 발생 시 None
+
                                     elif num_td_cells == 4:  # 상품명(rowspan) + 판매기간 + 사업방법서 + 상품약관 (상품요약서 컬럼 없음)
                                         sales_period = m_td_cells[1].text.strip()
-                                        summary_link = "N/A"  # 상품요약서 컬럼 자체가 없으므로 N/A
-                                        if pdf_extractor:
-                                            business_manual_link_xpath = f"{modal_table_base_xpath}/td[3]/a"
-                                            business_manual_link = pdf_extractor.click_and_get_download_link(
-                                                business_manual_link_xpath) or "N/A (추출 실패)"
-                                            terms_link_xpath = f"{modal_table_base_xpath}/td[4]/a"
-                                            terms_link = pdf_extractor.click_and_get_download_link(terms_link_xpath) or "N/A (추출 실패)"
-                                        else:
-                                            business_manual_link = "N/A (Extractor 비활성)"
-                                            terms_link = "N/A (Extractor 비활성)"
+                                        summary_link = None  # 상품요약서 컬럼 자체가 없으므로 None
+
+                                        # Href 값 직접 추출 및 변환 적용, 실패 시 None
+                                        try:
+                                            original_href = m_td_cells[2].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            business_manual_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            business_manual_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[3].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            terms_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            terms_link = None  # 예외 발생 시 None
                                     else:
                                         print("새로운 상품 행의 td 개수가 예상과 다릅니다: {}개. 건너뜁니다.".format(num_td_cells))
                                         continue
@@ -297,30 +308,41 @@ def get_chubblife_product_info():
                                     # 기존 상품의 하위 행 (상품명이 없는 행)
                                     if num_td_cells == 4:  # 판매기간 + 상품요약서 + 사업방법서 + 상품약관
                                         sales_period = m_td_cells[0].text.strip()
-                                        if pdf_extractor:
-                                            summary_link_xpath = f"{modal_table_base_xpath}/td[2]/a"
-                                            summary_link = pdf_extractor.click_and_get_download_link(summary_link_xpath) or "N/A (추출 실패)"
-                                            business_manual_link_xpath = f"{modal_table_base_xpath}/td[3]/a"
-                                            business_manual_link = pdf_extractor.click_and_get_download_link(
-                                                business_manual_link_xpath) or "N/A (추출 실패)"
-                                            terms_link_xpath = f"{modal_table_base_xpath}/td[4]/a"
-                                            terms_link = pdf_extractor.click_and_get_download_link(terms_link_xpath) or "N/A (추출 실패)"
-                                        else:
-                                            summary_link = "N/A (Extractor 비활성)"
-                                            business_manual_link = "N/A (Extractor 비활성)"
-                                            terms_link = "N/A (Extractor 비활성)"
+
+                                        # Href 값 직접 추출 및 변환 적용, 실패 시 None
+                                        try:
+                                            original_href = m_td_cells[1].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            summary_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            summary_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[2].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            business_manual_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            business_manual_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[3].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            terms_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            terms_link = None  # 예외 발생 시 None
                                     elif num_td_cells == 3:  # 판매기간 + 사업방법서 + 상품약관 (상품요약서 컬럼 없음)
                                         sales_period = m_td_cells[0].text.strip()
-                                        summary_link = "N/A"  # 상품요약서 컬럼 자체가 없으므로 N/A
-                                        if pdf_extractor:
-                                            business_manual_link_xpath = f"{modal_table_base_xpath}/td[2]/a"
-                                            business_manual_link = pdf_extractor.click_and_get_download_link(
-                                                business_manual_link_xpath) or "N/A (추출 실패)"
-                                            terms_link_xpath = f"{modal_table_base_xpath}/td[3]/a"
-                                            terms_link = pdf_extractor.click_and_get_download_link(terms_link_xpath) or "N/A (추출 실패)"
-                                        else:
-                                            business_manual_link = "N/A (Extractor 비활성)"
-                                            terms_link = "N/A (Extractor 비활성)"
+                                        summary_link = None  # 상품요약서 컬럼 자체가 없으므로 None
+
+                                        # Href 값 직접 추출 및 변환 적용, 실패 시 None
+                                        try:
+                                            original_href = m_td_cells[1].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            business_manual_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            business_manual_link = None  # 예외 발생 시 None
+
+                                        try:
+                                            original_href = m_td_cells[2].find_element(By.TAG_NAME, "a").get_attribute("href")
+                                            terms_link = extract_and_format_link(original_href)
+                                        except NoSuchElementException:
+                                            terms_link = None  # 예외 발생 시 None
                                     else:
                                         print("하위 데이터 행의 td 개수가 예상과 다릅니다: {}개. 건너뜁니다.".format(num_td_cells))
                                         continue
@@ -328,8 +350,8 @@ def get_chubblife_product_info():
                                 products_data_to_save = []
                                 scraped_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                                # 상품요약서 링크가 유효하면 추가
-                                if summary_link and summary_link != "N/A (추출 실패)" and summary_link != "N/A (Extractor 비활성)":
+                                # 링크가 None이 아닌 경우에만 추가
+                                if summary_link:
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
@@ -339,8 +361,7 @@ def get_chubblife_product_info():
                                         scraped_at,
                                         summary_link
                                     ])
-                                # 사업방법서 링크가 유효하면 추가
-                                if business_manual_link and business_manual_link != "N/A (추출 실패)" and business_manual_link != "N/A (Extractor 비활성)":
+                                if business_manual_link:
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
@@ -350,8 +371,7 @@ def get_chubblife_product_info():
                                         scraped_at,
                                         business_manual_link
                                     ])
-                                # 약관 링크가 유효하면 추가
-                                if terms_link and terms_link != "N/A (추출 실패)" and terms_link != "N/A (Extractor 비활성)":
+                                if terms_link:
                                     products_data_to_save.append([
                                         "Chubb Life",
                                         current_modal_product_name,
@@ -366,22 +386,12 @@ def get_chubblife_product_info():
                                     with db_manager as db:
                                         db.save_data(products_data_to_save)
                                 else:
-                                    print("  저장할 데이터가 없거나 DB Manager가 비활성화되어 있습니다.")
+                                    print("   저장할 데이터가 없거나 DB Manager가 비활성화되어 있습니다.")
 
-                                # products_data.append({ # 더 이상 리스트에 저장하지 않음
-                                #     "product_name": current_modal_product_name,
-                                #     "sales_period": sales_period,
-                                #     "summary_link": summary_link,
-                                #     "terms_link": terms_link,
-                                #     "business_manual_link": business_manual_link,
-                                #     "tab_type": tab_text,
-                                #     "page": current_page_num  # 현재 페이지 번호 사용
-                                # })
-
-                                print("  판매기간: {}".format(sales_period))
-                                print("  상품요약서: {}".format(summary_link))
-                                print("  사업방법서: {}".format(business_manual_link))
-                                print("  약관: {}".format(terms_link))
+                                print("   판매기간: {}".format(sales_period))
+                                print("   상품요약서: {}".format(summary_link if summary_link else "None"))
+                                print("   사업방법서: {}".format(business_manual_link if business_manual_link else "None"))
+                                print("   약관: {}".format(terms_link if terms_link else "None"))
 
                             try:
                                 close_button = WebDriverWait(driver, 5).until(
@@ -397,15 +407,15 @@ def get_chubblife_product_info():
                             except Exception as e_modal_close:
                                 print(f"모달 닫기 중 오류: {e_modal_close}")
 
-                            except TimeoutException:
-                                print("'{}' 상품의 모달창을 열거나 내용을 찾는 데 시간 초과.".format(product_name_in_list))
-                            except NoSuchElementException:
-                                print("'{}' 상품의 모달창 열기 버튼 또는 내부 요소를 찾을 수 없음.".format(product_name_in_list))
-                            except Exception as e_modal:
-                                print("'{}' 상품 모달 처리 중 오류: {}".format(product_name_in_list, e_modal))
+                    except TimeoutException:
+                        print("'{}' 상품의 모달창을 열거나 내용을 찾는 데 시간 초과.".format(product_name_in_list))
+                    except NoSuchElementException:
+                        print("'{}' 상품의 모달창 열기 버튼 또는 내부 요소를 찾을 수 없음.".format(product_name_in_list))
+                    except Exception as e_modal:
+                        print("'{}' 상품 모달 처리 중 오류: {}".format(product_name_in_list, e_modal))
 
                     except Exception as e_row:
-                        print(f"    상품명 요소를 찾을 수 없거나 상품 행 처리 중 오류: {e_row} (행 {row_idx + 1})")
+                        print(f"     상품명 요소를 찾을 수 없거나 상품 행 처리 중 오류: {e_row} (행 {row_idx + 1})")
                         traceback.print_exc()
                         continue
 
@@ -455,7 +465,7 @@ def get_chubblife_product_info():
 
                     # 페이지네이션 종료 조건: 다음 페이지 링크도 없고 '다음' 버튼도 비활성화된 경우
                     if next_page_to_click is None and is_next_button_disabled:
-                        print("  더 이상 다음 페이지 링크 또는 활성화된 '다음' 버튼이 없습니다. 페이지네이션 종료.")
+                        print("   더 이상 다음 페이지 링크 또는 활성화된 '다음' 버튼이 없습니다. 페이지네이션 종료.")
                         break
 
                     # 다음 페이지로 이동: 다음 번호 링크 우선, 없으면 '다음' 버튼 클릭
@@ -463,16 +473,16 @@ def get_chubblife_product_info():
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_page_to_click)
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", next_page_to_click)
-                        print("  페이지 번호 '{}' 클릭 완료. 새로운 페이지 로딩 대기...".format(current_page_num + 1))
+                        print("   페이지 번호 '{}' 클릭 완료. 새로운 페이지 로딩 대기...".format(current_page_num + 1))
                         current_page_num += 1
                     elif next_button and not is_next_button_disabled:
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", next_button)
-                        print("  '다음' 버튼 클릭 완료. 새로운 페이지 로딩 대기...")
+                        print("   '다음' 버튼 클릭 완료. 새로운 페이지 로딩 대기...")
                         current_page_num += 1
                     else:
-                        print("  다음 페이지로 이동할 수 있는 링크 또는 버튼을 찾을 수 없습니다. 페이지네이션 종료.")
+                        print("   다음 페이지로 이동할 수 있는 링크 또는 버튼을 찾을 수 없습니다. 페이지네이션 종료.")
                         break
 
                     # 새로운 상품 목록이 로드될 때까지 기다림
@@ -486,13 +496,13 @@ def get_chubblife_product_info():
                     time.sleep(1)  # 추가 렌더링 대기
 
                 except TimeoutException:
-                    print("  새 페이지 로드 대기 중 시간 초과. 페이지네이션 종료.")
+                    print("   새 페이지 로드 대기 중 시간 초과. 페이지네이션 종료.")
                     break
                 except StaleElementReferenceException:
-                    print("  StaleElementReferenceException 발생. 페이지네이션 요소를 다시 찾고 다음 페이지로 시도합니다.")
+                    print("   StaleElementReferenceException 발생. 페이지네이션 요소를 다시 찾고 다음 페이지로 시도합니다.")
                     time.sleep(1)  # 짧은 대기 후 재시도
                 except Exception as e_pagination:
-                    print("  페이지네이션 처리 중 예상치 못한 오류 발생: {}".format(e_pagination))
+                    print("   페이지네이션 처리 중 예상치 못한 오류 발생: {}".format(e_pagination))
                     traceback.print_exc()
                     break
 
@@ -506,12 +516,10 @@ def get_chubblife_product_info():
         if 'driver' in locals() and driver is not None:
             driver.quit()
 
-    # return products_data # 더 이상 리스트를 반환하지 않음
-
 
 if __name__ == '__main__':
     print("Chubb Life 상품 정보 스크래핑 시작...")
 
     get_chubblife_product_info()
 
-    print("Chubb Life 상품 정보 스크래핑 완료. 데이터는 'chubb_web_data..db'에 저장되었습니다.")
+    print("Chubb Life 상품 정보 스크래핑 완료. 데이터는 'chubb_web_data.db'에 저장되었습니다.")
