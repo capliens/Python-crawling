@@ -11,7 +11,8 @@ import time
 
 
 class PdfLinkExtractor:
-    def __init__(self, driver: webdriver.Chrome, download_directory: str = None, element_wait_timeout: int = 10, request_timeout: int = 10, verify_url_liveness: bool = True):
+    def __init__(self, driver: webdriver.Chrome, download_directory: str = None, element_wait_timeout: int = 10,
+                 request_timeout: int = 10, verify_url_liveness: bool = True, url_filter_pattern: str = None):
         self.driver = driver
         self.download_directory = download_directory
         self.element_wait_timeout = element_wait_timeout
@@ -19,16 +20,11 @@ class PdfLinkExtractor:
         self.verify_url_liveness = verify_url_liveness
         self.driver.request_interceptor = self._interceptor
         self.downloaded_files = []  # 다운로드된 파일 경로 저장
+        self.url_filter_pattern = url_filter_pattern
         print(f"PdfLinkExtractor 초기화. 다운로드 디렉토리: {self.download_directory}")
 
     def _interceptor(self, request):
-        """
-        Request interceptor to log POST requests, particularly for PDF downloads.
-        """
-        if request.method == 'POST' and 'fileDown' in request.url:
-            print(f"  [Interceptor] PDF 다운로드 POST 요청 감지: {request.url}")
-            # 페이로드 전체를 로깅하는 것은 너무 길 수 있으므로, 간략하게 변경하거나 제거할 수 있습니다.
-            print(f"  [Interceptor] Request Body (Payload): {request.body.decode('utf-8')}")
+        pass
 
     def _wait_for_download(self, initial_files=None, timeout=30):
         """
@@ -106,7 +102,7 @@ class PdfLinkExtractor:
         """
         XPath로 버튼을 클릭하고 해당 POST 요청의 페이로드를 반환합니다.
         실제 PDF 링크가 아닌, PDF 다운로드에 사용되는 요청의 바디를 추출합니다.
-        이 함수는 범용적으로 페이로드를 추출하는 역할만 수행합니다.
+        여기서 모든 로깅이 이루어집니다.
         """
         try:
             button = WebDriverWait(self.driver, timeout).until(
@@ -114,28 +110,53 @@ class PdfLinkExtractor:
             )
             print(f"  버튼 클릭 시도 (페이로드 추출용): {button_xpath}")
 
-            # 버튼 클릭 전 요청 초기화
+            # 버튼 클릭 전 모든 이전 요청 기록을 지웁니다.
+            # 이렇게 해야 현재 클릭으로 발생한 요청만 깔끔하게 확인할 수 있습니다.
             del self.driver.requests
 
             button.click()
             print("  버튼 클릭 완료.")
 
-            # 모든 POST 요청을 기다림 (특정 URL 패턴 없이)
-            WebDriverWait(self.driver, timeout).until(
-                lambda driver: any(r.method == 'POST' for r in driver.requests)
-            )
+            # 사용자가 정의한 URL 필터 패턴을 포함하는 POST 요청을 기다림
+            # WebDriverWait을 사용하여 요청이 발생할 때까지 기다립니다.
+            target_request = None
+            try:
+                WebDriverWait(self.driver, timeout).until(
+                    lambda driver: any(
+                        r.method == 'POST'
+                        and (self.url_filter_pattern is None or self.url_filter_pattern in r.url)
+                        for r in driver.requests
+                    )
+                )
+                # 요청 목록을 역순으로 탐색하여 가장 최근의 일치하는 요청을 찾습니다.
+                for req in reversed(self.driver.requests):
+                    if req.method == 'POST' and (self.url_filter_pattern is None or self.url_filter_pattern in req.url):
+                        target_request = req
+                        break
+            except TimeoutException:
+                # 요청이 시간 내에 감지되지 않았을 때의 처리
+                print(f"  오류: 지정된 패턴 '{self.url_filter_pattern}'을 포함하는 POST 요청이 {timeout}초 내에 감지되지 않았습니다.")
+                return None
 
-            # 가장 최근의 POST 요청 페이로드를 반환
-            for request in reversed(self.driver.requests):  # 최신 요청부터 확인
-                if request.method == 'POST':
-                    print(f"  [페이로드 추출기] POST 요청 페이로드 감지: {request.body.decode('utf-8')}")
-                    return request.body.decode('utf-8')  # 페이로드 반환
-
-            print("  경고: POST 요청 페이로드를 찾을 수 없습니다.")
-            return None
+            if target_request:
+                # 최종적으로 찾은 요청에 대한 정보를 출력합니다.
+                print(f"  [최종 감지된 요청] URL: {target_request.url}")
+                try:
+                    decoded_payload = target_request.body.decode('utf-8')
+                    print(f"  [최종 감지된 요청] Payload: {decoded_payload}")
+                    return decoded_payload
+                except UnicodeDecodeError:
+                    print(f"  [최종 감지된 요청] Payload (바이너리 데이터): {target_request.body[:50]}...")
+                    return "BINARY_PAYLOAD"
+                except Exception as e:
+                    print(f"  [최종 감지된 요청] Payload 디코딩 오류: {e}")
+                    return None
+            else:
+                print(f"  경고: 지정된 패턴 '{self.url_filter_pattern}'을 포함하는 PDF 다운로드 POST 요청 페이로드를 찾을 수 없습니다.")
+                return None
 
         except TimeoutException:
-            print(f"  오류: XPath '{button_xpath}'의 버튼을 {timeout}초 내에 찾거나 클릭할 수 없거나, POST 요청이 감지되지 않았습니다.")
+            print(f"  오류: XPath '{button_xpath}'의 버튼을 {timeout}초 내에 찾거나 클릭할 수 없습니다.")
             return None
         except StaleElementReferenceException:
             print(f"  오류: XPath '{button_xpath}'의 버튼이 StaleElementReferenceException 발생. DOM이 변경되었을 수 있습니다.")

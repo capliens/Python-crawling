@@ -124,7 +124,7 @@ def scrape_complex_insurance_products_final_with_logs(url):
 
     pdf_extractor = None
     if PdfLinkExtractor:
-        pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR)
+        pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR, url_filter_pattern="fileDown")
     else:
         print("경고: PdfLinkExtractor를 사용할 수 없습니다. PDF 다운로드 기능이 비활성화됩니다.")
 
