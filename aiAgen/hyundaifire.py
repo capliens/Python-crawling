@@ -324,7 +324,7 @@ def extract_table_data(driver_instance):
                 start_date = cols[1].text
                 end_date = cols[2].text
 
-                sale_period = f"{start_date} ~ {end_date}" if end_date else f"{start_date} ~ (판매중)"
+                sale_period = f"{start_date} ~ {end_date}" if end_date else f"{start_date} ~"
 
                 doc_info = {
                     "약관": {"text": "", "link": ""},

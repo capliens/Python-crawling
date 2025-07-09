@@ -26,21 +26,10 @@ except ImportError as e:
 
 
 def wait_for_spinner_to_disappear(driver, timeout=10):
-    """
-    (선택 사항) 로딩 스피너가 사라질 때까지 기다립니다.
-    스피너 요소의 정확한 CSS 셀렉터를 파악해야 합니다.
-    """
     pass
 
 
 def _scrape_products_by_type(driver, select_type, pane_id_prefix):
-    """
-    지정된 유형(주보험/특약) 내의 모든 상품군과 그 안의 모든 상품 상세 정보를 스크랩하는 내부 함수.
-    :param driver: Selenium WebDriver 인스턴스
-    :param select_type: '주보험' 또는 '특약'
-    :param pane_id_prefix: 해당 유형의 패널 ID 접두사 (예: 'pane-B' 또는 'pane-R')
-    :return: 현재 유형에서 스크랩된 데이터 리스트
-    """
     scraped_data_for_type = []
 
     # --- 1단계: 유형 탭 선택 ---
@@ -421,11 +410,6 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
 
 
 def scrape_all_lina_products(urls):
-    """
-    지정된 URL(들)의 리나생명 웹사이트에서 '주보험'과 '특약' 탭의 모든 상품 정보를 스크랩하는 메인 함수.
-    :param urls: 스크랩할 웹사이트 URL들의 리스트 (예: 판매중인 상품, 판매중지 상품)
-    :return: (판매 중인 상품 데이터 리스트, 판매 중지 상품 데이터 리스트) 튜플
-    """
     chrome_options = Options()
     # 크롤링 동작을 눈으로 확인하려면 아래 주석을 해제하세요.
     # chrome_options.add_argument("--headless") # 실제 브라우저 동작을 보려면 주석 처리
@@ -529,7 +513,7 @@ if __name__ == "__main__":
                             structured_rows_to_save_selling.append([
                                 company_name,
                                 product_name,
-                                renewal_status,  # 갱신유무
+                                None,  # 상품코드
                                 doc_type_name,
                                 sales_period,
                                 scraped_time,
@@ -569,7 +553,7 @@ if __name__ == "__main__":
                             structured_rows_to_save_discontinued.append([
                                 company_name,
                                 product_name,
-                                renewal_status,  # 갱신유무
+                                None,  # 상품코드
                                 doc_type_name,
                                 sales_period,
                                 scraped_time,
