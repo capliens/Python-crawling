@@ -279,7 +279,7 @@ if __name__ == "__main__":
                     structured_rows_to_save.extend(current_product_docs)
 
             if structured_rows_to_save:
-                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                with DatabaseManager(db_name="fubon_web_data.db") as db_manager:
                     saved_count = db_manager.save_data(structured_rows_to_save)
                 print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
             else:
