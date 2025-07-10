@@ -11,17 +11,18 @@ import time
 import os
 import sys
 from datetime import datetime
+import re  # 정규표현식 모듈 추가
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 try:
-    from neoali.pdf_link_scraper import PdfLinkExtractor
-    from neoali.DB_save import DatabaseManager  # DatabaseManager import 추가
+    # from neoali.pdf_link_scraper import PdfLinkExtractor # PdfLinkExtractor import 삭제
+    from neoali.DB_save import DatabaseManager
 except ImportError as e:
-    PdfLinkExtractor = None
-    DatabaseManager = None  # DatabaseManager 초기화 추가
+    # PdfLinkExtractor = None # PdfLinkExtractor 초기화 삭제
+    DatabaseManager = None
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "mggeneralins")
@@ -73,7 +74,7 @@ def handle_modal_if_present(driver):
     except TimeoutException:
         return False
     except Exception as e:
-        print(f"      [오류] 모달 처리 중 예상치 못한 오류 발생: {e}")
+        print(f"       [오류] 모달 처리 중 예상치 못한 오류 발생: {e}")
         return False
 
 
@@ -91,7 +92,7 @@ def extract_level3_data(driver, category_name_step1, category_name_step2, all_ex
         product_ul_elements = driver.find_elements(By.CSS_SELECTOR, ".pb_step03 > ul")
 
         if not product_ul_elements:
-            print(f"      [성공] 1단계: '{category_name_step1}', 2단계: '{category_name_step2}' -> 제품 데이터 없음.")
+            print(f"       [성공] 1단계: '{category_name_step1}', 2단계: '{category_name_step2}' -> 제품 데이터 없음.")
             return
 
         for i, product_ul in enumerate(product_ul_elements):
@@ -116,77 +117,47 @@ def extract_level3_data(driver, category_name_step1, category_name_step2, all_ex
                     "사업방법서": None
                 }
 
-                pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR)
+                # pdf_extractor = PdfLinkExtractor(driver, download_directory=DOWNLOAD_DIR) # PdfLinkExtractor 초기화 삭제
 
                 # 상품요약서 링크 처리 (테이블의 2번째 td)
                 try:
                     summary_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[2]/a")
-                    xpath_script = """
-                    function getXPath(element) {
-                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
-                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
-                        var ix = 0;
-                        var siblings = element.parentNode.childNodes;
-                        for (var i = 0; i < siblings.length; i++) {
-                            var sibling = siblings[i];
-                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
-                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
-                        }
-                    }
-                    return getXPath(arguments[0]);
-                    """
-                    summary_link_xpath = driver.execute_script(xpath_script, summary_link_element)
-                    pdf_path = pdf_extractor.click_and_get_download_link(summary_link_xpath)
-                    if pdf_path:
-                        item_downloads["상품요약서"] = pdf_path
+                    href_value = summary_link_element.get_attribute("href")
+                    # JavaScript 함수 호출에서 'ID'와 'TYPE' 추출
+                    match = re.search(r"pdfDownload\('(\d+)','(\d+)'\);", href_value)
+                    if match:
+                        data_idno = match.group(1)
+                        doc_cfcd = match.group(2)
+                        pdf_link = f"https://www.mggeneralins.com/PB031130_003.form?dataIdno={data_idno}&docCfcd={doc_cfcd}"
+                        item_downloads["상품요약서"] = pdf_link
                 except NoSuchElementException:
                     pass
 
                 # 약관 링크 처리 (테이블의 3번째 td)
                 try:
                     terms_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[3]/a")
-                    xpath_script = """
-                    function getXPath(element) {
-                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
-                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
-                        var ix = 0;
-                        var siblings = element.parentNode.childNodes;
-                        for (var i = 0; i < siblings.length; i++) {
-                            var sibling = siblings[i];
-                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
-                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
-                        }
-                    }
-                    return getXPath(arguments[0]);
-                    """
-                    terms_link_xpath = driver.execute_script(xpath_script, terms_link_element)
-                    pdf_path = pdf_extractor.click_and_get_download_link(terms_link_xpath)
-                    if pdf_path:
-                        item_downloads["약관"] = pdf_path
+                    href_value = terms_link_element.get_attribute("href")
+                    # JavaScript 함수 호출에서 'ID'와 'TYPE' 추출
+                    match = re.search(r"pdfDownload\('(\d+)','(\d+)'\);", href_value)
+                    if match:
+                        data_idno = match.group(1)
+                        doc_cfcd = match.group(2)
+                        pdf_link = f"https://www.mggeneralins.com/PB031130_003.form?dataIdno={data_idno}&docCfcd={doc_cfcd}"
+                        item_downloads["약관"] = pdf_link
                 except NoSuchElementException:
                     pass
 
                 # 사업방법서 링크 처리 (테이블의 4번째 td)
                 try:
                     biz_link_element = table.find_element(By.XPATH, ".//tbody/tr/td[4]/a")
-                    xpath_script = """
-                    function getXPath(element) {
-                        if (element.id !== '') return '//*[@id=\"' + element.id + '\"]';
-                        if (element === document.body) return '/html/' + element.tagName.toLowerCase();
-                        var ix = 0;
-                        var siblings = element.parentNode.childNodes;
-                        for (var i = 0; i < siblings.length; i++) {
-                            var sibling = siblings[i];
-                            if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
-                            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
-                        }
-                    }
-                    return getXPath(arguments[0]);
-                    """
-                    biz_link_xpath = driver.execute_script(xpath_script, biz_link_element)
-                    pdf_path = pdf_extractor.click_and_get_download_link(biz_link_xpath)
-                    if pdf_path:
-                        item_downloads["사업방법서"] = pdf_path
+                    href_value = biz_link_element.get_attribute("href")
+                    # JavaScript 함수 호출에서 'ID'와 'TYPE' 추출
+                    match = re.search(r"pdfDownload\('(\d+)','(\d+)'\);", href_value)
+                    if match:
+                        data_idno = match.group(1)
+                        doc_cfcd = match.group(2)
+                        pdf_link = f"https://www.mggeneralins.com/PB031130_003.form?dataIdno={data_idno}&docCfcd={doc_cfcd}"
+                        item_downloads["사업방법서"] = pdf_link
                 except NoSuchElementException:
                     pass
 
@@ -197,19 +168,19 @@ def extract_level3_data(driver, category_name_step1, category_name_step2, all_ex
                     "판매기간": sales_period,
                     "다운로드_링크": item_downloads
                 })
-                print(f"      [추출 성공] 제품: '{product_name}'")
+                print(f"       [추출 성공] 제품: '{product_name}'")
 
             except TimeoutException as e:
-                print(f"      [오류] 제품 항목 {i + 1} 로드 타임아웃: {e}")
+                print(f"       [오류] 제품 항목 {i + 1} 로드 타임아웃: {e}")
             except NoSuchElementException as e:
-                print(f"      [오류] 제품 항목 {i + 1} 필수 요소 찾을 수 없음: {e}")
+                print(f"       [오류] 제품 항목 {i + 1} 필수 요소 찾을 수 없음: {e}")
             except Exception as e:
-                print(f"      [오류] 제품 항목 {i + 1} 처리 중 예상치 못한 오류 발생: {e}")
+                print(f"       [오류] 제품 항목 {i + 1} 처리 중 예상치 못한 오류 발생: {e}")
 
     except TimeoutException:
-        print(f"      [오류] 3단계 컨테이너 로드 타임아웃 (1단계: '{category_name_step1}', 2단계: '{category_name_step2}')")
+        print(f"       [오류] 3단계 컨테이너 로드 타임아웃 (1단계: '{category_name_step1}', 2단계: '{category_name_step2}')")
     except Exception as e:
-        print(f"      [오류] 3단계 처리 중 예상치 못한 오류 발생: {e}")
+        print(f"       [오류] 3단계 처리 중 예상치 못한 오류 발생: {e}")
 
 
 def crawl_level2_and_extract_data(driver, parent_category_name, all_extracted_data):
@@ -225,7 +196,7 @@ def crawl_level2_and_extract_data(driver, parent_category_name, all_extracted_da
     target_tab_wrap_class = tab_wrap_map.get(parent_category_name)
 
     if not target_tab_wrap_class:
-        print(f"  [오류] 알 수 없는 1단계 카테고리 '{parent_category_name}'. 2단계 탭 래퍼를 찾을 수 없습니다.")
+        print(f"   [오류] 알 수 없는 1단계 카테고리 '{parent_category_name}'. 2단계 탭 래퍼를 찾을 수 없습니다.")
         return
 
     try:
@@ -244,14 +215,14 @@ def crawl_level2_and_extract_data(driver, parent_category_name, all_extracted_da
             level2_item_data.append({'text': item_text, 'id': item_id})
 
         if not level2_item_data:
-            print(f"  [성공] 1단계: '{parent_category_name}' -> 2단계 항목 없음.")
+            print(f"   [성공] 1단계: '{parent_category_name}' -> 2단계 항목 없음.")
             return
 
         for i, item_info in enumerate(level2_item_data):
             item_name = item_info['text']
             item_id = item_info['id']
 
-            print(f"\n  [클릭] 1단계: '{parent_category_name}', 2단계: '{item_name}' 클릭 시도 중...")
+            print(f"\n   [클릭] 1단계: '{parent_category_name}', 2단계: '{item_name}' 클릭 시도 중...")
 
             current_item_link = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, f"//div[contains(@class, '{target_tab_wrap_class}')]//li[@id='{item_id}']/a"))
@@ -262,18 +233,18 @@ def crawl_level2_and_extract_data(driver, parent_category_name, all_extracted_da
             modal_handled = handle_modal_if_present(driver)
 
             if modal_handled:
-                print(f"  [처리 완료] 1단계: '{parent_category_name}', 2단계: '{item_name}' -> 모달창 처리 완료. 제품 데이터 없음.")
+                print(f"   [처리 완료] 1단계: '{parent_category_name}', 2단계: '{item_name}' -> 모달창 처리 완료. 제품 데이터 없음.")
                 continue
             else:
                 time.sleep(2)
                 extract_level3_data(driver, parent_category_name, item_name, all_extracted_data)
 
     except TimeoutException as e:
-        print(f"  [오류] 2단계 '{parent_category_name}' 탐색 타임아웃: {e}")
+        print(f"   [오류] 2단계 '{parent_category_name}' 탐색 타임아웃: {e}")
     except NoSuchElementException as e:
-        print(f"  [오류] 2단계 '{parent_category_name}'에서 요소를 찾을 수 없음: {e}")
+        print(f"   [오류] 2단계 '{parent_category_name}'에서 요소를 찾을 수 없음: {e}")
     except Exception as e:
-        print(f"  [오류] 2단계 '{parent_category_name}' 처리 중 예상치 못한 오류 발생: {e}")
+        print(f"   [오류] 2단계 '{parent_category_name}' 처리 중 예상치 못한 오류 발생: {e}")
 
 
 def crawl_website(url):
