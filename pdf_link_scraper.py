@@ -1,7 +1,7 @@
 import os
 import re
 import requests
-import urllib.parse  # 이 모듈은 더 이상 사용하지 않지만, 일단 남겨둡니다. shinhanez.py에서 사용될 것이기 때문입니다.
+import urllib.parse
 from seleniumwire import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -19,7 +19,7 @@ class PdfLinkExtractor:
         self.request_timeout = request_timeout
         self.verify_url_liveness = verify_url_liveness
         self.driver.request_interceptor = self._interceptor
-        self.downloaded_files = []  # 다운로드된 파일 경로 저장
+        self.downloaded_files = []
         self.url_filter_pattern = url_filter_pattern
         print(f"PdfLinkExtractor 초기화. 다운로드 디렉토리: {self.download_directory}")
 
@@ -45,7 +45,7 @@ class PdfLinkExtractor:
                     self.downloaded_files.append(f_path)
                     print(f"  [Download Monitor] 새 파일 다운로드 완료: {f_path}")
                     return f_path
-            time.sleep(0.5)  # 0.5초 간격으로 확인
+            time.sleep(0.5)
         print(f"  [Download Monitor] 지정된 시간({timeout}초) 내에 새 파일 다운로드 완료되지 않음.")
         return None
 
@@ -60,33 +60,28 @@ class PdfLinkExtractor:
             )
             print(f"  버튼 클릭 시도: {button_xpath}")
 
-            # 현재 존재하는 파일 목록 저장 (다운로드 감지를 위해)
             initial_files = set(os.listdir(self.download_directory))
 
-            # 버튼 클릭 전 요청 초기화 (Selenium Wire)
             del self.driver.requests
 
-            button.click()
+            # Selenium의 .click() 대신 JavaScript를 사용하여 클릭
+            self.driver.execute_script("arguments[0].click();", button)
             print("  버튼 클릭 완료.")
 
-            # 특정 POST 요청이 발생할 때까지 기다립니다.
             try:
-                # 'fileDown'이 포함된 POST 요청을 기다림
                 WebDriverWait(self.driver, timeout).until(
                     lambda driver: any('fileDown' in r.url and r.method == 'POST' for r in driver.requests)
                 )
                 print("  PDF 다운로드 관련 POST 요청 감지됨.")
             except TimeoutException:
                 print(f"  경고: {timeout}초 내에 PDF 다운로드 POST 요청이 감지되지 않았습니다. 파일 다운로드 대기 시도.")
-                # 요청이 감지되지 않아도 실제 파일 다운로드가 시작될 수 있으므로 계속 진행
 
-            # 파일 다운로드를 기다립니다.
             downloaded_file_path = self._wait_for_download(initial_files, timeout=timeout)
             if downloaded_file_path:
                 return downloaded_file_path
             else:
                 print("  경고: 파일 다운로드 경로를 얻지 못했습니다. 네트워크 요청에서 링크를 찾거나 직접 다운로드되지 않을 수 있습니다.")
-                return None  # 파일 다운로드가 감지되지 않으면 None 반환
+                return None
 
         except TimeoutException:
             print(f"  오류: XPath '{button_xpath}'의 버튼을 {timeout}초 내에 찾거나 클릭할 수 없습니다.")
@@ -110,15 +105,12 @@ class PdfLinkExtractor:
             )
             print(f"  버튼 클릭 시도 (페이로드 추출용): {button_xpath}")
 
-            # 버튼 클릭 전 모든 이전 요청 기록을 지웁니다.
-            # 이렇게 해야 현재 클릭으로 발생한 요청만 깔끔하게 확인할 수 있습니다.
             del self.driver.requests
 
-            button.click()
+            # Selenium의 .click() 대신 JavaScript를 사용하여 클릭
+            self.driver.execute_script("arguments[0].click();", button)
             print("  버튼 클릭 완료.")
 
-            # 사용자가 정의한 URL 필터 패턴을 포함하는 POST 요청을 기다림
-            # WebDriverWait을 사용하여 요청이 발생할 때까지 기다립니다.
             target_request = None
             try:
                 WebDriverWait(self.driver, timeout).until(
@@ -128,18 +120,15 @@ class PdfLinkExtractor:
                         for r in driver.requests
                     )
                 )
-                # 요청 목록을 역순으로 탐색하여 가장 최근의 일치하는 요청을 찾습니다.
                 for req in reversed(self.driver.requests):
                     if req.method == 'POST' and (self.url_filter_pattern is None or self.url_filter_pattern in req.url):
                         target_request = req
                         break
             except TimeoutException:
-                # 요청이 시간 내에 감지되지 않았을 때의 처리
                 print(f"  오류: 지정된 패턴 '{self.url_filter_pattern}'을 포함하는 POST 요청이 {timeout}초 내에 감지되지 않았습니다.")
                 return None
 
             if target_request:
-                # 최종적으로 찾은 요청에 대한 정보를 출력합니다.
                 print(f"  [최종 감지된 요청] URL: {target_request.url}")
                 try:
                     decoded_payload = target_request.body.decode('utf-8')
@@ -172,17 +161,14 @@ class PdfLinkExtractor:
         if not url:
             return False
 
-        # 로컬 경로는 이 함수에서 검증하지 않음 (항상 유효하다고 간주)
         if "://" not in url and os.path.isabs(url):
             return True
 
-        if not self.verify_url_liveness:  # 검증 비활성화 시, 기본적인 웹 URL 형식인지 정도만 확인
+        if not self.verify_url_liveness:
             if "://" in url:
                 return True
-            # print(f"  [_is_url_live] 검증 비활성화, 그러나 유효한 URL 형식 아님: {url}")
             return False
 
-        # verify_url_liveness=True인 경우 실제 HEAD 요청 검증
         try:
             response = requests.head(url, timeout=timeout, allow_redirects=True)
             if not response.ok:
@@ -190,18 +176,12 @@ class PdfLinkExtractor:
                 return False
 
             content_type = response.headers.get('Content-Type', '').lower()
-            # Content-Disposition도 확인하여 PDF 파일명을 명시하는지 검토 가능
-            # content_disposition = response.headers.get('Content-Disposition', '').lower()
-            # is_disposition_pdf = 'filename=' in content_disposition and '.pdf' in content_disposition
-
             is_pdf_content_type = 'application/pdf' in content_type
             is_url_ends_with_pdf = url.lower().endswith('.pdf')
 
-            # PDF로 판단할 조건: URL이 .pdf로 끝나거나, Content-Type이 application/pdf인 경우
-            if is_url_ends_with_pdf or is_pdf_content_type:  # or is_disposition_pdf:
+            if is_url_ends_with_pdf or is_pdf_content_type:
                 return True
             else:
-                # API URL과 같은 경우, Content-Type이 application/json 등일 수 있음
                 print(f"  [_is_url_live] 검증실패: URL은 유효(2xx)하나 PDF 콘텐츠 아님 (Content-Type: {content_type}, URL: {url})")
                 return False
         except requests.exceptions.Timeout:
@@ -225,6 +205,7 @@ class PdfLinkExtractor:
                 trigger_element = WebDriverWait(self.driver, self.element_wait_timeout).until(
                     EC.element_to_be_clickable((By.XPATH, pdf_trigger_element_xpath))
                 )
+                # Selenium의 .click() 대신 JavaScript를 사용하여 클릭
                 self.driver.execute_script("arguments[0].click();", trigger_element)
             except TimeoutException:
                 print(f"  [SW Interception] 요소 찾기/클릭 실패 (Timeout: {self.element_wait_timeout}s): {pdf_trigger_element_xpath}")
@@ -236,7 +217,7 @@ class PdfLinkExtractor:
             time.sleep(3)
 
             current_url_after_click = self.driver.current_url
-            if current_url_after_click.lower().endswith(".pdf"):  # .pdf로 끝나면 우선적으로 고려
+            if current_url_after_click.lower().endswith(".pdf"):
                 if self._is_url_live(current_url_after_click):
                     print(f"  [SW Interception] 클릭 후 URL이 실제 PDF임: {current_url_after_click}")
                     return current_url_after_click
@@ -247,11 +228,9 @@ class PdfLinkExtractor:
                 if request.response:
                     response_url = request.url
 
-                    # API 호출로 보이는 URL 패턴 필터링 (더 많은 패턴 추가 가능)
                     api_patterns = ["/api/", "dataserviceid=", "pageid="]
                     is_api_call_pattern = any(pattern in response_url.lower() for pattern in api_patterns)
                     if is_api_call_pattern:
-                        # print(f"    [SW Log] API 호출로 보이는 URL 건너뜀: {response_url}")
                         continue
 
                     content_type = request.response.headers.get('Content-Type', '').lower()
@@ -271,7 +250,7 @@ class PdfLinkExtractor:
             check_interval = 1
             while time.time() - start_time < download_check_timeout:
                 current_loop_url = self.driver.current_url
-                if current_loop_url.lower().endswith(".pdf"):  # .pdf로 끝나는지만 먼저 확인
+                if current_loop_url.lower().endswith(".pdf"):
                     if self._is_url_live(current_loop_url):
                         print(f"  [SW Interception] 로컬 다운로드 감지 중 현재 URL이 PDF로 변경됨: {current_loop_url}")
                         return current_loop_url
