@@ -281,7 +281,7 @@ def crawl_product_names_and_data_js_click(driver_instance, all_product_data_list
                 EC.element_to_be_clickable((By.XPATH, f"//div[@id='div_goodsList']//button[span='{product_name_text}']"))
             )
             driver_instance.execute_script("arguments[0].click();", current_product_name_button)
-            
+
             # 클릭 후 로딩 감지 함수 호출
             wait_for_loading_to_finish(driver_instance)
             print(f"상품명 '{product_name_text}' 선택 후 로딩 완료.")
@@ -294,7 +294,7 @@ def crawl_product_names_and_data_js_click(driver_instance, all_product_data_list
                 print("        상품 목록 테이블이 완전히 로드되고 가시화되었습니다.")
             except TimeoutException:
                 print("        경고: 상품 목록 테이블이 시간 내에 로드되지 않았습니다. 데이터를 가져오지 못할 수 있습니다.")
-                
+
             # 테이블 데이터 추출 및 전체 리스트에 추가
             extracted_data = extract_table_data(driver_instance)
             all_product_data_list.extend(extracted_data)
@@ -330,26 +330,26 @@ def extract_table_data(driver_instance):
         # 각 행을 처리할 때마다 다시 해당 행 요소를 찾아 접근하는 것이 더 안정적입니다.
         rows_initial_count = len(driver_instance.find_elements(By.CSS_SELECTOR, "#tbd_prodList tr"))
 
-        for idx in range(rows_initial_count): # 인덱스를 사용하여 루프
+        for idx in range(rows_initial_count):  # 인덱스를 사용하여 루프
             try:
                 # 각 반복마다 해당 행을 다시 찾아옴으로써 StaleElementReferenceException 방지
                 row = WebDriverWait(driver_instance, 5).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, f"#tbd_prodList tr:nth-child({idx + 1})"))
                 )
-                
+
                 # 행 내부의 td 요소들을 다시 찾음
                 cols = row.find_elements(By.TAG_NAME, "td")
-                if not cols or len(cols) < 7: # 최소한의 td 개수 확인 (상품명, 판매기간, 3개 문서링크 포함)
+                if not cols or len(cols) < 7:  # 최소한의 td 개수 확인 (상품명, 판매기간, 3개 문서링크 포함)
                     print(f"경고: 행 {idx + 1}에 유효한 td 요소가 부족합니다. 스킵합니다.")
                     continue
 
                 # 상품 기본 정보 추출 (각 요소의 텍스트를 추출하기 전에 존재 여부 확인)
                 product_name_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[1]")))
                 product_name = product_name_elem.text.strip()
-                
+
                 start_date_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[2]")))
                 start_date = start_date_elem.text.strip()
-                
+
                 end_date_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[3]")))
                 end_date = end_date_elem.text.strip()
 
@@ -357,7 +357,6 @@ def extract_table_data(driver_instance):
 
                 # 추출된 상품명과 판매기간 로깅 (디버깅용)
                 # print(f"    [DEBUG] 추출된 상품명: '{product_name}', 판매기간: '{sale_period}'")
-
 
                 doc_info = {
                     "약관": {"text": "", "link": ""},
@@ -369,13 +368,13 @@ def extract_table_data(driver_instance):
                 def process_doc_link(col_index, doc_type_key):
                     pdf_extracted_link = "N/A"
                     new_window_handle = None
-                    
+
                     try:
                         # 링크 요소를 추출하기 전에 해당 td 요소를 다시 찾아서 안정성 확보
                         # row에서부터 상대 경로로 다시 찾아야 StaleElementReferenceException을 피할 수 있습니다.
                         link_td = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, f"./td[{col_index + 1}]")))
-                        link_elem = link_td.find_element(By.TAG_NAME, "a") # 여기서도 Stale 될 수 있으므로, 최신 link_td에서 찾음
-                        
+                        link_elem = link_td.find_element(By.TAG_NAME, "a")  # 여기서도 Stale 될 수 있으므로, 최신 link_td에서 찾음
+
                         link_title = link_elem.get_attribute("title")
                         link_onclick = link_elem.get_attribute("onclick")
                         is_disabled = "disabled" in link_elem.get_attribute("class")
@@ -404,7 +403,7 @@ def extract_table_data(driver_instance):
 
                             try:
                                 # 새 창이 열릴 때까지 기다림
-                                WebDriverWait(driver_instance, 15).until(
+                                WebDriverWait(driver_instance, 20).until(
                                     EC.number_of_windows_to_be(len(current_window_handles_before_click) + 1)
                                 )
                                 # 열린 모든 창 핸들 중 원래 창이 아닌 새 핸들을 찾음
@@ -494,8 +493,8 @@ def extract_table_data(driver_instance):
                         # (즉, 탭이 3개 이상 열린 비정상적인 상황에 대한 비상 처리)
                         elif driver_instance.current_window_handle != original_window:
                             print(f"Warning: 비정상적인 탭 상태 감지. "
-                                    f"현재 탭: {driver_instance.current_window_handle}, "
-                                    f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
+                                  f"현재 탭: {driver_instance.current_window_handle}, "
+                                  f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
                             try:
                                 # 원래 창을 제외한 모든 탭을 강제로 닫기 시도
                                 for handle in driver_instance.window_handles:

@@ -251,7 +251,7 @@ def _scrape_products_by_type(driver, select_type, pane_id_prefix):
 
                                                     print(f"    '{doc_type}' 다운로드 버튼 클릭 시도...")
                                                     driver.execute_script("arguments[0].click();", doc_button)
-                                                    time.sleep(2)  # 새 탭이 열릴 시간을 줍니다 (기존 1초에서 2초로 증가)
+                                                    time.sleep(3)  # 새 탭이 열릴 시간을 줍니다 (기존 1초에서 2초로 증가)
 
                                                     new_window_handles = [
                                                         handle for handle in driver.window_handles if handle not in current_window_handles]
