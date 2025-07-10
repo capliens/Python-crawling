@@ -1,8 +1,4 @@
-# 미래에셋생명 상품 /판매 중단/링크에서 null문제 파일 반환 주소반환 문제인듯/수정후 db확인
-# 경로?
-# https://life.miraeasset.com/micro/cmmnFileDown.do?pathType=gongci_u1&fileName=미래에셋생명 변액연금보험 무배당 미래를 응원해_약관_20250401.pdf&orgFileName=미래에셋생명 변액연금보험 무배당 미래를 응원해_약관_20250401.pdf&filePath=/uploadwas/life//html/gongci/upload/1/
-
-# https://life.miraeasset.com/micro/cmmnFileDown.do?pathType=gongci_u1&fileName=미래에셋생명 변액연금보험 무배당 미래를 부탁해_약관_20241001.pdf &orgFileName=미래에셋생명 변액연금보험 무배당 미래를 부탁해_약관_20241001.pdf다운&filePath=/uploadwas/life//html/gongci/upload/1/
+# 미래에셋생명 상품 /판매 중단/DB확인
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -31,6 +27,8 @@ except ImportError as e:
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "miraeasset")  # 다운로드 폴더명 구체화
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
+
+request_url = "https://life.miraeasset.com/micro/cmmnFileDown.do"
 
 
 def handle_alert(driver):
@@ -185,11 +183,16 @@ def get_miraeasset_product_info():
                     business_manual_link = bm_links[0].get_attribute('href') if bm_links else "N/A"
 
                 # PDF 링크 추출 로직도 인덱스 조정 필요
-                pdf_extractor = PdfLinkExtractor(driver, DOWNLOAD_DIR, verify_url_liveness=True)
+                pdf_extractor = PdfLinkExtractor(driver, DOWNLOAD_DIR, verify_url_liveness=True,
+                                                 url_filter_pattern="cmmnFileDown.do")
                 extracted_summary_pdf_link = "N/A"
                 if summary_link and summary_link != "N/A" and summary_links:
                     summary_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{summary_links_idx + 1}]/a[1]"
-                    extracted_summary_pdf_link = pdf_extractor.click_and_get_download_link(summary_xpath)
+                    summary_payload = pdf_extractor.get_pdf_download_payload(summary_xpath, 20)
+                    if summary_payload:
+                        extracted_summary_pdf_link = request_url + "?" + summary_payload
+                    else:
+                        print("페이로드가 없습니다")
                     handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
 
                 extracted_terms_pdf_links = []
@@ -197,7 +200,12 @@ def get_miraeasset_product_info():
                     for k, link_element in enumerate(terms_links_elements):
                         if link_element.is_displayed():
                             term_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{terms_links_idx + 1}]/a[{k + 1}]"
-                            extracted_terms_pdf_links.append(pdf_extractor.click_and_get_download_link(term_xpath))
+                            terms_payload = pdf_extractor.get_pdf_download_payload(term_xpath, 20)
+                            if terms_payload:
+                                terms_payload_link = request_url + "?" + terms_payload
+                            else:
+                                print("페이로드가 없습니다")
+                            extracted_terms_pdf_links.append(terms_payload_link)
                             handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
                 extracted_terms_pdf_link = (
                     ", ".join([pdf_link for pdf_link in extracted_terms_pdf_links if pdf_link is not None and pdf_link != "N/A" and pdf_link.strip() != ""])
@@ -207,7 +215,11 @@ def get_miraeasset_product_info():
                 extracted_business_manual_pdf_link = "N/A"
                 if business_manual_link and business_manual_link != "N/A" and bm_links:
                     bm_xpath = f"//table[@id='tbl01']/tbody[@id='tbl_contents']/tr[{i + 1}]/td[{bm_links_idx + 1}]/a[1]"
-                    extracted_business_manual_pdf_link = pdf_extractor.click_and_get_download_link(bm_xpath)
+                    business_manual_payload = pdf_extractor.get_pdf_download_payload(bm_xpath, 20)
+                    if business_manual_payload:
+                        extracted_business_manual_pdf_link = request_url + "?" + business_manual_payload
+                    else:
+                        print("페이로드가 없습니다")
                     handle_alert(driver)  # PDF 링크 클릭 후 알림창 처리
 
                 # 판매기간 정보가 있는 행만 유효한 데이터로 간주 (상품명만 있는 행 제외)
@@ -235,6 +247,7 @@ def get_miraeasset_product_info():
                 if current_product_name != "N/A" and last_valid_sales_period != "N/A":
                     # 이 경우 추출된 PDF 링크는 N/A이므로, DB에 저장하지 않음
                     pass  # 이 부분은 이미 링크가 N/A이므로 저장하지 않음
+            print(product_data_row)
 
         if not products_data:
             print("데이터를 찾지 못했습니다. HTML 구조 및 선택자를 다시 확인해야 합니다.")
