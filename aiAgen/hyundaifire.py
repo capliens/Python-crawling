@@ -255,10 +255,15 @@ def crawl_product_names_and_data_js_click(driver_instance, all_product_data_list
             EC.presence_of_element_located((By.ID, "div_goodsList"))
         )
 
-        # 상품명 버튼 정보 추출
+        # 상품명 버튼 정보 추출 (안정성 강화)
         product_name_info_list = []
-        for btn in product_name_buttons_container.find_elements(By.TAG_NAME, "button"):
-            product_name_info_list.append({'text': btn.text})
+        product_buttons = WebDriverWait(product_name_buttons_container, 5).until(
+            EC.presence_of_all_elements_located((By.TAG_NAME, "button"))
+        )
+        for btn in product_buttons:
+            btn_text = btn.text.strip()
+            if btn_text:
+                product_name_info_list.append({'text': btn_text})
 
         if not product_name_info_list:
             print("        상품명 필터에 상품이 없습니다. 이 조합에서는 데이터 추출 스킵.")
@@ -271,15 +276,25 @@ def crawl_product_names_and_data_js_click(driver_instance, all_product_data_list
             product_name_text = prod_info['text']
             print(f"        --- 상품명: '{product_name_text}' 선택 ---")
 
-            # 해당 상품명 버튼 클릭
+            # 해당 상품명 버튼 클릭 (클릭 전 요소를 다시 찾아서 Stale 방지)
             current_product_name_button = WebDriverWait(driver_instance, 5).until(
                 EC.element_to_be_clickable((By.XPATH, f"//div[@id='div_goodsList']//button[span='{product_name_text}']"))
             )
             driver_instance.execute_script("arguments[0].click();", current_product_name_button)
+            
             # 클릭 후 로딩 감지 함수 호출
             wait_for_loading_to_finish(driver_instance)
             print(f"상품명 '{product_name_text}' 선택 후 로딩 완료.")
 
+            # 테이블이 완전히 로드되고 가시화되었는지 대기 추가
+            try:
+                WebDriverWait(driver_instance, 10).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "#tbd_prodList tr:first-child"))
+                )
+                print("        상품 목록 테이블이 완전히 로드되고 가시화되었습니다.")
+            except TimeoutException:
+                print("        경고: 상품 목록 테이블이 시간 내에 로드되지 않았습니다. 데이터를 가져오지 못할 수 있습니다.")
+                
             # 테이블 데이터 추출 및 전체 리스트에 추가
             extracted_data = extract_table_data(driver_instance)
             all_product_data_list.extend(extracted_data)
@@ -298,6 +313,7 @@ def extract_table_data(driver_instance):
     각 상품 행(<tr>)을 처리할 때마다 상품 정보를 즉시 출력합니다.
     PDF 링크를 클릭하여 실제 URL을 가져오고 새 탭을 닫습니다.
     onclick 속성 유무를 확인하여 클릭 여부를 결정합니다. 상품설명서는 제외합니다.
+    **StaleElementReferenceException에 대한 처리 로직 강화.**
     """
     local_product_data = []
     try:
@@ -307,24 +323,41 @@ def extract_table_data(driver_instance):
         )
         wait_for_loading_to_finish(driver_instance)  # 로딩 스피너 대기
 
-        table = driver_instance.find_element(By.CLASS_NAME, "tbl_data")
-        rows = table.find_elements(By.CSS_SELECTOR, "#tbd_prodList tr")
-
-        # 현재(원본) 창 핸들 저장
+        # 원본 창 핸들 저장
         original_window = driver_instance.current_window_handle
 
-        for idx, row in enumerate(rows):
-            try:
-                cols = row.find_elements(By.TAG_NAME, "td")
-                if not cols:
-                    continue  # td 요소가 없으면 다음 행으로
+        # 테이블의 모든 행을 가져옴. 이 리스트 자체는 스틸이 될 수 있으므로,
+        # 각 행을 처리할 때마다 다시 해당 행 요소를 찾아 접근하는 것이 더 안정적입니다.
+        rows_initial_count = len(driver_instance.find_elements(By.CSS_SELECTOR, "#tbd_prodList tr"))
 
-                # 상품 기본 정보 추출
-                product_name = cols[0].text
-                start_date = cols[1].text
-                end_date = cols[2].text
+        for idx in range(rows_initial_count): # 인덱스를 사용하여 루프
+            try:
+                # 각 반복마다 해당 행을 다시 찾아옴으로써 StaleElementReferenceException 방지
+                row = WebDriverWait(driver_instance, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, f"#tbd_prodList tr:nth-child({idx + 1})"))
+                )
+                
+                # 행 내부의 td 요소들을 다시 찾음
+                cols = row.find_elements(By.TAG_NAME, "td")
+                if not cols or len(cols) < 7: # 최소한의 td 개수 확인 (상품명, 판매기간, 3개 문서링크 포함)
+                    print(f"경고: 행 {idx + 1}에 유효한 td 요소가 부족합니다. 스킵합니다.")
+                    continue
+
+                # 상품 기본 정보 추출 (각 요소의 텍스트를 추출하기 전에 존재 여부 확인)
+                product_name_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[1]")))
+                product_name = product_name_elem.text.strip()
+                
+                start_date_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[2]")))
+                start_date = start_date_elem.text.strip()
+                
+                end_date_elem = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, "./td[3]")))
+                end_date = end_date_elem.text.strip()
 
                 sale_period = f"{start_date} ~ {end_date}" if end_date else f"{start_date} ~"
+
+                # 추출된 상품명과 판매기간 로깅 (디버깅용)
+                # print(f"    [DEBUG] 추출된 상품명: '{product_name}', 판매기간: '{sale_period}'")
+
 
                 doc_info = {
                     "약관": {"text": "", "link": ""},
@@ -334,13 +367,15 @@ def extract_table_data(driver_instance):
 
                 # PDF 문서 링크 처리 헬퍼 함수 (중요: 새 탭 안정화 로직 포함)
                 def process_doc_link(col_index, doc_type_key):
-                    # 기본값은 "N/A"
                     pdf_extracted_link = "N/A"
                     new_window_handle = None
-                    link_elem = None
-
+                    
                     try:
-                        link_elem = cols[col_index].find_element(By.TAG_NAME, "a")
+                        # 링크 요소를 추출하기 전에 해당 td 요소를 다시 찾아서 안정성 확보
+                        # row에서부터 상대 경로로 다시 찾아야 StaleElementReferenceException을 피할 수 있습니다.
+                        link_td = WebDriverWait(row, 5).until(EC.presence_of_element_located((By.XPATH, f"./td[{col_index + 1}]")))
+                        link_elem = link_td.find_element(By.TAG_NAME, "a") # 여기서도 Stale 될 수 있으므로, 최신 link_td에서 찾음
+                        
                         link_title = link_elem.get_attribute("title")
                         link_onclick = link_elem.get_attribute("onclick")
                         is_disabled = "disabled" in link_elem.get_attribute("class")
@@ -350,22 +385,22 @@ def extract_table_data(driver_instance):
                         # 링크가 유효하고 onclick 속성이 있는 경우에만 처리
                         if not is_disabled and link_onclick and link_onclick.strip() != "" and "javascript:void(0)" in link_elem.get_attribute("href"):
 
-                            print(f"    └─ [{doc_type_key}] 링크 클릭 전 브라우저 캐시 및 저장소 초기화 시도...")
+                            print(f"      └─ [{doc_type_key}] 링크 클릭 전 브라우저 캐시 및 저장소 초기화 시도...")
                             driver_instance.execute_script("window.localStorage.clear();")
                             driver_instance.execute_script("window.sessionStorage.clear();")
                             driver_instance.execute_script(
                                 "if (caches) { caches.keys().then(names => { for (let name of names) { caches.delete(name); console.log('Cache ' + name + ' deleted.'); } }); }")
-                            print(f"    └─ [{doc_type_key}] 브라우저 캐시 및 저장소 초기화 완료.")
+                            print(f"      └─ [{doc_type_key}] 브라우저 캐시 및 저장소 초기화 완료.")
 
                             driver_instance.requests.clear()
-                            print(f"    └─ [{doc_type_key}] 클릭 전 seleniumwire 요청 목록 초기화 완료.")
+                            print(f"      └─ [{doc_type_key}] 클릭 전 seleniumwire 요청 목록 초기화 완료.")
 
                             current_window_handles_before_click = driver_instance.window_handles
-                            print(f"    └─ [{doc_type_key}] 클릭 전 탭 수: {len(current_window_handles_before_click)}")
+                            print(f"      └─ [{doc_type_key}] 클릭 전 탭 수: {len(current_window_handles_before_click)}")
 
                             # JavaScript 클릭 시도
                             driver_instance.execute_script("arguments[0].click();", link_elem)
-                            print(f"    └─ [{doc_type_key}] 링크 JavaScript 클릭 실행.")
+                            print(f"      └─ [{doc_type_key}] 링크 JavaScript 클릭 실행.")
 
                             try:
                                 # 새 창이 열릴 때까지 기다림
@@ -379,10 +414,10 @@ def extract_table_data(driver_instance):
 
                                     if new_window_handle in driver_instance.window_handles:
                                         driver_instance.switch_to.window(new_window_handle)
-                                        print(f"    └─ [{doc_type_key}] 새 탭 '{new_window_handle}'으로 전환 완료.")
+                                        print(f"      └─ [{doc_type_key}] 새 탭 '{new_window_handle}'으로 전환 완료.")
 
                                         pdf_url_pattern = re.compile(r'.*\.pdf$', re.IGNORECASE)
-                                        print(f"    └─ [{doc_type_key}] 새 탭의 URL이 '.pdf'로 끝날 때까지 대기 시작 (최대 20초).")
+                                        print(f"      └─ [{doc_type_key}] 새 탭의 URL이 '.pdf'로 끝날 때까지 대기 시작 (최대 20초).")
 
                                         try:
                                             # 현재 URL이 PDF 패턴과 일치하고 'about:blank'가 아닌 경우를 기다림
@@ -391,21 +426,21 @@ def extract_table_data(driver_instance):
                                             )
                                             # 성공적으로 PDF URL을 찾으면 할당
                                             pdf_extracted_link = driver_instance.current_url
-                                            print(f"    └─ [{doc_type_key}] PDF 링크 추출 성공 (새 탭 URL 확인): {pdf_extracted_link}")
+                                            print(f"      └─ [{doc_type_key}] PDF 링크 추출 성공 (새 탭 URL 확인): {pdf_extracted_link}")
                                         except TimeoutException:
                                             # 타임아웃 발생 시 N/A 유지
-                                            print(f"      → [{doc_type_key}] 새 탭 URL이 '.pdf'로 끝나지 않거나 타임아웃 발생. N/A로 처리.")
-                                            print(f"      → 현재 새 탭 URL: {driver_instance.current_url}")
+                                            print(f"        → [{doc_type_key}] 새 탭 URL이 '.pdf'로 끝나지 않거나 타임아웃 발생. N/A로 처리.")
+                                            print(f"        → 현재 새 탭 URL: {driver_instance.current_url}")
                                         except Exception as url_check_e:
                                             # URL 확인 중 예외 발생 시 N/A 유지
-                                            print(f"      → [{doc_type_key}] URL 확인 중 예기치 않은 오류 발생. N/A로 처리: {url_check_e}")
+                                            print(f"        → [{doc_type_key}] URL 확인 중 예기치 않은 오류 발생. N/A로 처리: {url_check_e}")
 
                                     else:
                                         # 새 창 핸들이 유효하지 않으면 N/A 유지
-                                        print(f"      → [{doc_type_key}] 새 창 핸들이 유효하지 않습니다. N/A로 처리.")
+                                        print(f"        → [{doc_type_key}] 새 창 핸들이 유효하지 않습니다. N/A로 처리.")
                                 else:
                                     # 새 창이 열렸으나 핸들을 찾을 수 없으면 N/A 유지
-                                    print(f"      → [{doc_type_key}] 새 창이 열렸으나 핸들을 찾을 수 없음. N/A로 처리.")
+                                    print(f"        → [{doc_type_key}] 새 창이 열렸으나 핸들을 찾을 수 없음. N/A로 처리.")
 
                             except TimeoutException as e:
                                 # 새 창 열기 타임아웃 발생 시 N/A 유지
@@ -416,14 +451,17 @@ def extract_table_data(driver_instance):
                         else:
                             # 링크가 비활성화되거나 onclick 속성이 없으면 N/A 유지 (기본값)
                             if is_disabled:
-                                print(f"    └─ [{doc_type_key}] 링크가 비활성화되어 N/A 처리됩니다.")
+                                print(f"      └─ [{doc_type_key}] 링크가 비활성화되어 N/A 처리됩니다.")
                             elif not link_onclick:
-                                print(f"    └─ [{doc_type_key}] 링크에 onclick 속성이 없어 N/A 처리됩니다.")
+                                print(f"      └─ [{doc_type_key}] 링크에 onclick 속성이 없어 N/A 처리됩니다.")
 
                     except NoSuchElementException:
                         doc_info[doc_type_key]["text"] = "링크 없음"
                         # 링크 요소를 찾을 수 없으면 N/A 유지
                         print(f"Error: [{doc_type_key}] 링크 요소를 찾을 수 없습니다. N/A로 처리.")
+                    except StaleElementReferenceException:
+                        doc_info[doc_type_key]["text"] = "링크 없음 (Stale)"
+                        print(f"Error: [{doc_type_key}] 링크 요소가 Stale 합니다. N/A로 처리.")
                     except Exception as e:
                         # 일반 오류 발생 시 N/A 유지
                         print(f"Error: [{doc_type_key}] 링크 처리 중 일반 오류 발생. N/A로 처리: {e}")
@@ -439,14 +477,14 @@ def extract_table_data(driver_instance):
                                 )
                                 if original_window in driver_instance.window_handles:
                                     driver_instance.switch_to.window(original_window)  # 원래 창으로 전환
-                                    print(f"    └─ [{doc_type_key}] 새 탭 닫고 원래 탭으로 전환 완료.")
+                                    print(f"      └─ [{doc_type_key}] 새 탭 닫고 원래 탭으로 전환 완료.")
                                 else:
                                     print(f"Warning: [{doc_type_key}] 원래 창 핸들이 유효하지 않아 전환 실패. 모든 탭 확인 후 복귀 시도.")
                                     # 이 경우, 모든 탭을 확인하여 원래 탭을 찾아 다시 전환 시도
                                     for handle in driver_instance.window_handles:
                                         if handle == original_window:
                                             driver_instance.switch_to.window(original_window)
-                                            print(f"    └─ [{doc_type_key}] 원래 탭으로 성공적으로 재전환 완료.")
+                                            print(f"      └─ [{doc_type_key}] 원래 탭으로 성공적으로 재전환 완료.")
                                             break
                             except WebDriverException as close_e:
                                 print(f"Warning: 새 탭 닫기/원래 탭 전환 중 WebDriver 오류: {close_e}")
@@ -456,29 +494,30 @@ def extract_table_data(driver_instance):
                         # (즉, 탭이 3개 이상 열린 비정상적인 상황에 대한 비상 처리)
                         elif driver_instance.current_window_handle != original_window:
                             print(f"Warning: 비정상적인 탭 상태 감지. "
-                                  f"현재 탭: {driver_instance.current_window_handle}, "
-                                  f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
+                                    f"현재 탭: {driver_instance.current_window_handle}, "
+                                    f"원래 탭: {original_window}. 모든 비정상 탭 정리 시도.")
                             try:
                                 # 원래 창을 제외한 모든 탭을 강제로 닫기 시도
                                 for handle in driver_instance.window_handles:
                                     if handle != original_window:
-                                        print(f"    └─ 비정상 탭 ({handle}) 닫기 시도.")
+                                        print(f"      └─ 비정상 탭 ({handle}) 닫기 시도.")
                                         driver_instance.switch_to.window(handle)
                                         driver_instance.close()
                                         time.sleep(0.1)  # 짧게 대기하여 브라우저가 탭을 처리할 시간 부여
                                 # 마지막으로 원래 탭으로 복귀
                                 if original_window in driver_instance.window_handles:
                                     driver_instance.switch_to.window(original_window)
-                                    print("    └─ 비정상적인 탭 모두 닫고 원래 탭으로 복귀 완료.")
+                                    print("      └─ 비정상적인 탭 모두 닫고 원래 탭으로 복귀 완료.")
                                 else:
                                     print("Warning: 비정상적인 탭 정리 후 원래 창 핸들이 유효하지 않아 복귀 실패.")
                             except Exception as clean_e:
                                 print(f"Error: 비정상적인 탭 정리 중 오류 발생: {clean_e}")
                         elif new_window_handle is None:  # 새 창이 아예 열리지 않은 경우
-                            print(f"    └─ [{doc_type_key}] 새 탭이 열리지 않았습니다. 원래 탭 유지.")
+                            print(f"      └─ [{doc_type_key}] 새 탭이 열리지 않았습니다. 원래 탭 유지.")
                     doc_info[doc_type_key]["link"] = pdf_extracted_link
 
                 # 문서 유형별 링크 처리 호출 (상품설명서 제외)
+                # 각 process_doc_link 호출 전에 로직을 다시 실행하여 안정성 확보
                 process_doc_link(4, "약관")
                 process_doc_link(5, "사업방법서")
                 process_doc_link(6, "상품요약서")
@@ -532,4 +571,4 @@ if __name__ == "__main__":
 
     # 수집된 모든 데이터 출력 (선택 사항)
     # for data in all_collected_data:
-    #     print(data)
+    #    print(data)
