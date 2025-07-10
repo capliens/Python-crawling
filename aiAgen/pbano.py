@@ -1,4 +1,4 @@
-# 수호천사동양생명/판매페이지는 페이지오류
+# 수호천사동양생명/판매페이지는 페이지오류/링크가져오기 수정함
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -9,6 +9,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 import sys
+import re  # 정규표현식 사용을 위해 re 모듈 임포트
 from datetime import datetime
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -16,40 +17,22 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 try:
-    from neoali.pdf_link_scraper import PdfLinkExtractor
     from neoali.DB_save import DatabaseManager
 except ImportError as e:
-    PdfLinkExtractor = None
     DatabaseManager = None
     print(f"경고: 모듈 임포트 실패 ({e}). 일부 기능이 비활성화될 수 있습니다.")
 
-PBANO_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads", "pbano")
-if not os.path.exists(PBANO_DOWNLOAD_DIR):
-    os.makedirs(PBANO_DOWNLOAD_DIR)
-
 
 def scrape_pbano_products():
-    print("PBA손해보험 스크래핑 시작...")  # 함수 시작 시 로그
+    print("PBA손해보험 스크래핑 시작...")
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    prefs = {
-        "download.default_directory": PBANO_DOWNLOAD_DIR,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "plugins.always_open_pdf_externally": True,
-        "profile.default_content_setting_values.automatic_downloads": 1
-    }
-    options.add_experimental_option("prefs", prefs)
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 10)
-
-    pdf_extractor = None
-    if PdfLinkExtractor:
-        pdf_extractor = PdfLinkExtractor(driver, PBANO_DOWNLOAD_DIR)
 
     url = "https://pbano.myangel.co.kr/paging/WE_AC_WEPAAP020100L"
     driver.get(url)
@@ -59,13 +42,13 @@ def scrape_pbano_products():
 
     try:
         while True:
-            print(f"페이지 {page_num} 스크래핑 중...")  # 페이지 번호 명시
+            print(f"페이지 {page_num} 스크래핑 중...")
             try:
                 table_body_selector = "table.tableStyle > tbody"
                 table_body = wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, table_body_selector))
                 )
-                time.sleep(0.5)  # DOM 안정화 시간 단축
+                time.sleep(0.5)
                 rows = table_body.find_elements(By.TAG_NAME, "tr")
 
                 base_tbody_xpath = "//table[contains(@class,'tableStyle')]/tbody"
@@ -76,7 +59,6 @@ def scrape_pbano_products():
                         current_row_element = driver.find_element(By.XPATH, current_row_xpath_prefix)
                         cells = current_row_element.find_elements(By.TAG_NAME, "td")
                     except (NoSuchElementException, TimeoutException):
-                        # print(f"  행 {row_idx + 1} 다시 가져오기 실패. 건너뜁니다.") # 상세 로그 제거
                         continue
                     if not cells:
                         continue
@@ -88,40 +70,38 @@ def scrape_pbano_products():
                     business_method_link_val = "N/A"
                     insurance_terms_link_val = "N/A"
 
-                    if pdf_extractor:
-                        # 상품요약서 (td[6] -> XPath td index 6)
-                        if len(cells) > 5:
-                            summary_xpath = f"{current_row_xpath_prefix}/td[6]/a"
-                            summary_link_val = pdf_extractor.extract_pdf_link(None, summary_xpath)
+                    # --- 수정된 부분 시작 ---
+                    def extract_and_construct_link(cell_index):
+                        if len(cells) > cell_index:
+                            try:
+                                link_element = cells[cell_index].find_element(By.TAG_NAME, "a")
+                                href = link_element.get_attribute("href")
+                                if href and "javascript:MasFiledownload" in href:
+                                    # 정규 표현식을 사용하여 FILE_GRP_ID 추출
+                                    match = re.search(r"MasFiledownload\('_N', '(.*?)'\)", href)
+                                    if match:
+                                        file_grp_id = match.group(1)
+                                        # 추출된 FILE_GRP_ID로 완전한 다운로드 URL 구성
+                                        return f"https://pbano.myangel.co.kr/process/CO_ComDownload?_biz_op_code=FDL&FILE_GRP_ID={file_grp_id}"
+                                    else:
+                                        return "N/A (FILE_GRP_ID 추출 실패)"
+                                elif href:  # href가 있으나 javascript 함수가 아닌 경우
+                                    return href
+                                else:  # href가 없는 경우
+                                    return "N/A (href 없음)"
+                            except NoSuchElementException:  # 링크 요소가 없는 경우
+                                return "N/A (링크 요소 없음)"
+                        return "N/A"
 
-                        # 사업방법서 (td[7] -> XPath td index 7)
-                        if len(cells) > 6:
-                            biz_method_xpath = f"{current_row_xpath_prefix}/td[7]/a"
-                            business_method_link_val = pdf_extractor.extract_pdf_link(None, biz_method_xpath)
+                    # 상품요약서 (td[6] -> cells 인덱스 5)
+                    summary_link_val = extract_and_construct_link(5)
 
-                        # 보험약관 (td[8] -> XPath td index 8)
-                        if len(cells) > 7:
-                            terms_xpath = f"{current_row_xpath_prefix}/td[8]/a"
-                            insurance_terms_link_val = pdf_extractor.extract_pdf_link(None, terms_xpath)
-                    else:
-                        if len(cells) > 5:
-                            try:
-                                link_element = cells[5].find_element(By.TAG_NAME, "a")
-                                summary_link_val = link_element.get_attribute("href") or "N/A (href 없음)"
-                            except NoSuchElementException:
-                                summary_link_val = "N/A (링크 요소 없음)"
-                        if len(cells) > 6:
-                            try:
-                                link_element = cells[6].find_element(By.TAG_NAME, "a")
-                                business_method_link_val = link_element.get_attribute("href") or "N/A (href 없음)"
-                            except NoSuchElementException:
-                                business_method_link_val = "N/A (링크 요소 없음)"
-                        if len(cells) > 7:
-                            try:
-                                link_element = cells[7].find_element(By.TAG_NAME, "a")
-                                insurance_terms_link_val = link_element.get_attribute("href") or "N/A (href 없음)"
-                            except NoSuchElementException:
-                                insurance_terms_link_val = "N/A (링크 요소 없음)"
+                    # 사업방법서 (td[7] -> cells 인덱스 6)
+                    business_method_link_val = extract_and_construct_link(6)
+
+                    # 보험약관 (td[8] -> cells 인덱스 7)
+                    insurance_terms_link_val = extract_and_construct_link(7)
+                    # --- 수정된 부분 끝 ---
 
                     all_products_data.append({
                         "상품명": product_name,
@@ -130,7 +110,6 @@ def scrape_pbano_products():
                         "사업방법서": business_method_link_val,
                         "보험약관": insurance_terms_link_val
                     })
-                    # print(f"  추가됨: {product_name}, 요약서: {summary_link_val}, 사업방법서: {business_method_link_val}, 약관: {insurance_terms_link_val}") # 상세 로그 제거
 
                 current_page_element = wait.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "div.paging strong"))
@@ -153,11 +132,9 @@ def scrape_pbano_products():
                     except ValueError:
                         continue
                     except StaleElementReferenceException:
-                        # print("페이지 링크가 stale 상태가 됨. 페이지네이션 재시도 필요할 수 있음.") # 상세 로그 제거
                         break
 
                 if not next_page_link_found:
-                    # print("다음 페이지 링크를 찾지 못했습니다. 스크래핑을 종료합니다.") # 상세 로그 제거
                     break
             except TimeoutException:
                 print(f"페이지 {page_num}: 테이블/페이지네이션 요소 찾기 시간 초과. 종료합니다.")
@@ -168,7 +145,7 @@ def scrape_pbano_products():
     finally:
         if driver:
             driver.quit()
-        print("PBA손해보험 스크래핑 완료.")  # 함수 종료 시 로그
+        print("PBA손해보험 스크래핑 완료.")
     return all_products_data
 
 
@@ -184,21 +161,14 @@ def is_valid_pbano_link(link_str):
     is_http_link = link_str.startswith("http")
 
     is_local_pdf_file = False
-    # HTTP 링크가 아닌 경우, 로컬 파일 경로인지 그리고 PDF 파일인지 확인
     if not is_http_link:
         try:
-            # PdfLinkExtractor가 반환하는 경로가 절대 경로라고 가정
             if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
                 is_local_pdf_file = True
-            # 만약 PdfLinkExtractor가 PBANO_DOWNLOAD_DIR 기준의 상대 경로(예: 파일명)를 반환한다면,
-            # 아래와 같이 PBANO_DOWNLOAD_DIR와 조합하여 경로를 만들어 확인해야 할 수 있습니다.
-            # elif os.path.exists(os.path.join(PBANO_DOWNLOAD_DIR, link_str)) and link_str.lower().endswith(".pdf"):
-            # is_local_pdf_file = True
-        except Exception:  # 경로 관련 오류 발생 시 False로 유지
+        except Exception:
             pass
-    # HTTP 링크이지만 .pdf로 끝나지 않는 경우 (필요시 이 조건은 사이트 특성에 맞게 조정)
     elif is_http_link and not link_str.lower().endswith(".pdf"):
-        return False  # PDF가 아닌 다른 문서 형식은 일단 제외
+        return False
 
     return is_http_link or is_local_pdf_file
 
@@ -211,7 +181,7 @@ if __name__ == "__main__":
             print("DB 저장 진행중...")
             structured_rows_to_save = []
             scraped_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            company_name = "PBA손해보험"  # 회사명 확인 필요 (PBA Primary 한국자산평가 일수도 있음)
+            company_name = "PBA손해보험"
 
             for item in scraped_data:
                 product_name_val = item.get("상품명")
