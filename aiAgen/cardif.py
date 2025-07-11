@@ -32,9 +32,6 @@ def save_to_database(data_list, company_name="BNP파리바 카디프생명"):
     주어진 데이터 리스트를 데이터베이스에 저장합니다.
     각 상품 또는 특약의 문서 타입별로 별도의 레코드를 생성합니다.
     """
-    if not DatabaseManager:
-        print("DatabaseManager를 임포트할 수 없어 데이터베이스에 저장할 수 없습니다.")
-        return
 
     if not data_list:
         print("데이터베이스에 저장할 데이터가 없습니다.")
@@ -67,7 +64,7 @@ def save_to_database(data_list, company_name="BNP파리바 카디프생명"):
             ))
 
     if structured_rows_for_db:
-        with DatabaseManager() as db_manager:
+        with DatabaseManager(db_name="cardif_web_data.db") as db_manager:
             db_manager.save_data(structured_rows_for_db)
         print(f"\n총 {len(structured_rows_for_db)}개의 데이터를 데이터베이스에 저장 완료.")
     else:

@@ -157,8 +157,7 @@ def scrape_hanalife_products(url):
 
         # DB 저장 로직 추가
         if DatabaseManager:
-            db_name = f"{company_name.replace(' ', '')}_web_data.db"
-            with DatabaseManager(db_name=db_name) as db_manager:
+            with DatabaseManager(db_name="hanalife_web_data.db") as db_manager:
                 if db_save_data:
                     print(f"\n{company_name} 데이터를 DB에 저장 중...")
                     db_manager.save_data(db_save_data)
