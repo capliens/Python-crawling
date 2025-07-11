@@ -205,7 +205,7 @@ if __name__ == "__main__":
     if scraped_data:
         print("\n--- 스크랩된 데이터를 DB에 저장 중 ---")
         company_name = "롯데손해보험"
-        db_name = f"{company_name.replace(' ', '')}_web_data.db"
+        db_name = "lotteins_web_data.db"
 
         # DB 저장 형식에 맞게 데이터 변환
         structured_rows = []
