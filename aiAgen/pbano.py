@@ -1,4 +1,4 @@
-# 수호천사동양생명/판매페이지는 페이지오류/링크가져오기 수정함
+# 수호천사동양생명/판매페이지는 페이지오류
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -152,25 +152,31 @@ def scrape_pbano_products():
 def is_valid_pbano_link(link_str):
     if not link_str or not isinstance(link_str, str) or not link_str.strip():
         return False
+
+    # "N/A" 등 유효하지 않은 마커가 포함된 경우
     invalid_markers = ["N/A", "(추출 실패)", "(링크/버튼 없음)", "(링크 요소 없음)", "(href 없음)", "(추출 오류)"]
     if any(marker in link_str for marker in invalid_markers):
         return False
+
+    # JavaScript 함수 호출 링크 (extract_and_construct_link에서 이미 처리되므로 거의 여기 걸릴 일은 없음)
     if link_str.strip().lower().startswith("javascript:"):
         return False
 
-    is_http_link = link_str.startswith("http")
+    # PBA손해보험의 실제 파일 다운로드 링크 패턴
+    # 이 패턴을 포함하는 모든 HTTP 링크는 유효하다고 간주합니다.
+    if "pbano.myangel.co.kr/process/CO_ComDownload" in link_str:
+        return True
 
-    is_local_pdf_file = False
-    if not is_http_link:
-        try:
-            if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
-                is_local_pdf_file = True
-        except Exception:
-            pass
-    elif is_http_link and not link_str.lower().endswith(".pdf"):
-        return False
+    # 그 외의 일반적인 HTTP 링크 (PBA손보 다운로드 링크가 아니면서 단순히 http로 시작하는 경우)
+    # 이제는 .pdf 확장자 체크를 하지 않습니다.
+    if link_str.startswith("http"):
+        return True  # HTTP로 시작하면 유효하다고 판단
 
-    return is_http_link or is_local_pdf_file
+    # 로컬 PDF 파일인 경우 (기존 로직 유지)
+    if os.path.exists(link_str) and link_str.lower().endswith(".pdf"):
+        return True
+
+    return False
 
 
 if __name__ == "__main__":
@@ -208,7 +214,7 @@ if __name__ == "__main__":
                     structured_rows_to_save.extend(current_product_docs)
 
             if structured_rows_to_save:
-                with DatabaseManager(db_name="insurance_products.db") as db_manager:
+                with DatabaseManager(db_name="pbano_web_data.db") as db_manager:
                     saved_count = db_manager.save_data(structured_rows_to_save)
                 print(f"DB 저장 완료. 총 {saved_count}건 문서 정보 저장.")
             else:

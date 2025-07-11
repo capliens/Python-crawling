@@ -1,5 +1,4 @@
-# 라이나생명보험/DB확인
-# 판매중단페이지,테이블이 구조가 다른경우를 대비하도록 수정
+# 라이나생명보험
 import time
 import os
 import sys
