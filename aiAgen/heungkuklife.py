@@ -1,4 +1,4 @@
-# 흥국생명/안쓰는 코드제거
+# 흥국생명/안쓰는 코드제거/DB저장 문제잇음
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
