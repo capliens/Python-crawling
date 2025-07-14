@@ -1,4 +1,4 @@
-# 흥국생명/안쓰는 코드제거/DB저장 문제잇음
+# 흥국생명
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -80,7 +80,10 @@ def get_product_name_items(driver, wait):
 
 
 def extract_detail_data(driver, wait, product_name_full, is_discontinued=False):
-    """상품 상세 정보 및 PDF 링크 추출 (판매중지 여부에 따라 열 인덱스 조정)"""
+    """
+    상품 상세 정보 및 PDF 링크 추출.
+    판매중지 여부와 관계없이 동일한 열 인덱스를 사용하도록 수정됨.
+    """
     detail_info = {
         "보험명": product_name_full,
         "판매기간": "정보 없음",
@@ -95,15 +98,16 @@ def extract_detail_data(driver, wait, product_name_full, is_discontinued=False):
 
         tds_in_detail = product_detail_row_element.find_elements(By.TAG_NAME, "td")
 
-        # 열 인덱스 결정 (0-based for list access, 1-based for XPath)
-        # 판매상품: 판매기간(td[0]), 상품코드(td[1]), 약관(td[2]), 사업방법서(td[3]), 상품요약서(td[4])
-        # 판매중지: (기간선택 td[0]), 판매기간(td[1]), 상품코드(td[2]), 약관(td[3]), 사업방법서(td[4]), 상품요약서(td[5])
-
-        sales_period_td_list_idx = 1 if is_discontinued else 0
-        product_code_td_list_idx = 2 if is_discontinued else 1
-        terms_td_list_idx = 3 if is_discontinued else 2
-        biz_method_td_list_idx = 4 if is_discontinued else 3
-        summary_td_list_idx = 5 if is_discontinued else 4
+        # 여기를 수정했습니다:
+        # 판매상품과 판매중지 상품의 상세 테이블 'td' 인덱스가 동일하다는 전제 하에,
+        # is_discontinued 여부에 따른 인덱스 조정을 제거하고 고정된 인덱스를 사용합니다.
+        # 실제 웹페이지 구조에 따라 아래 인덱스들은 다를 수 있으니,
+        # 필요시 웹 개발자 도구로 직접 확인하여 0-based 인덱스를 정확히 맞춰주세요.
+        sales_period_td_list_idx = 0  # 판매기간의 0-based 인덱스 (예: 첫 번째 td)
+        product_code_td_list_idx = 1  # 상품코드의 0-based 인덱스 (예: 두 번째 td)
+        terms_td_list_idx = 2        # 약관 링크의 0-based 인덱스 (예: 세 번째 td)
+        biz_method_td_list_idx = 3   # 사업방법서 링크의 0-based 인덱스 (예: 네 번째 td)
+        summary_td_list_idx = 4      # 상품요약서 링크의 0-based 인덱스 (예: 다섯 번째 td)
 
         if len(tds_in_detail) > sales_period_td_list_idx:
             try:
@@ -117,9 +121,9 @@ def extract_detail_data(driver, wait, product_name_full, is_discontinued=False):
                 pass
 
         # PDF 링크 추출 XPath (tbody#productVoTr/tr[1] 기준으로 td 인덱스 사용)
+        # XPath는 1-based 인덱스를 사용하므로, 0-based 리스트 인덱스에 +1을 해줍니다.
         base_tr_xpath = "//tbody[@id='productVoTr']/tr[1]"
 
-        # pdf_extractor 관련 조건문 제거, 항상 href 속성만 가져옵니다.
         if len(tds_in_detail) > terms_td_list_idx:
             terms_xpath = f"{base_tr_xpath}/td[{terms_td_list_idx + 1}]/a[1]"
             try:
@@ -181,14 +185,12 @@ def process_product_names(driver, wait, division_name, all_data, is_discontinued
         except Exception:
             continue
 
-        product_name_full = f"{division_name} - {product_name_short}"
-
         if not safe_click(driver, product_element_to_click, wait_sec=1):
             continue
 
         try:
-            # pdf_extractor 인자 제거
-            data = extract_detail_data(driver, wait, product_name_full, is_discontinued=is_discontinued_page)
+            # extract_detail_data에 'product_name_short'를 직접 전달
+            data = extract_detail_data(driver, wait, product_name_short, is_discontinued_page)
             all_data.append(data)
         except Exception as e_extract:
             print(f"    '{product_name_short}' 데이터 추출 실패: {e_extract}")
@@ -235,11 +237,6 @@ def get_heungkuklife_product_info():
 
         wait = WebDriverWait(driver, 15)
 
-        # pdf_extractor 객체 생성 및 관련 로직 제거
-        # pdf_extractor = None
-        # if PdfLinkExtractor:
-        #     pdf_extractor = PdfLinkExtractor(driver, HEUNGKUKLIFE_DOWNLOAD_DIR)
-
         all_data = []
 
         print("판매상품 정보 수집 중...")
@@ -250,7 +247,6 @@ def get_heungkuklife_product_info():
         try:
             division_items_selling = get_filter_items(driver, wait, "1. 구분선택")
             if not division_items_selling:
-                # pdf_extractor 인자 제거
                 process_product_names(driver, wait, "기본 판매상품 구분", all_data, is_discontinued_page=False)
             else:
                 for i in range(len(division_items_selling)):
@@ -264,7 +260,6 @@ def get_heungkuklife_product_info():
                         driver.get(selling_url)
                         time.sleep(1)
                         continue
-                    # pdf_extractor 인자 제거
                     process_product_names(driver, wait, division_name, all_data, is_discontinued_page=False)
                     driver.get(selling_url)
                     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//dt[contains(text(), '1. 구분선택')]")))
@@ -283,7 +278,6 @@ def get_heungkuklife_product_info():
             if not period_items:
                 division_items_discontinued = get_filter_items(driver, wait, "1. 구분선택")
                 if not division_items_discontinued:
-                    # pdf_extractor 인자 제거
                     process_product_names(driver, wait, "기본 판매중지 기간/구분", all_data, is_discontinued_page=True)
                 else:
                     for i in range(len(division_items_discontinued)):
@@ -297,7 +291,6 @@ def get_heungkuklife_product_info():
                             driver.get(discontinued_url)
                             time.sleep(1)
                             continue
-                        # pdf_extractor 인자 제거
                         process_product_names(driver, wait, f"판매중지 - {div_name}", all_data, is_discontinued_page=True)
                         driver.get(discontinued_url)
                         WebDriverWait(driver, 10).until(EC.presence_of_element_located(
@@ -318,7 +311,6 @@ def get_heungkuklife_product_info():
 
                     division_items_after_period = get_filter_items(driver, wait, "2. 구분선택")
                     if not division_items_after_period:
-                        # pdf_extractor 인자 제거
                         process_product_names(driver, wait, f"판매중지 - {period_name} - 기본구분", all_data, is_discontinued_page=True)
                     else:
                         for j in range(len(division_items_after_period)):
@@ -330,7 +322,6 @@ def get_heungkuklife_product_info():
                             print(f"    판매중지 구분: '{div_name_dp}' (기간: {period_name}) 처리 중...")
                             if not safe_click(driver, div_el_dp, wait_sec=1):
                                 break
-                            # pdf_extractor 인자 제거
                             process_product_names(driver, wait,
                                                   f"판매중지 - {period_name} - {div_name_dp}", all_data, is_discontinued_page=True)
 
@@ -371,7 +362,7 @@ if __name__ == "__main__":
                 product_name_val = item_data.get("보험명")
                 sales_period_val = item_data.get("판매기간")
                 product_code_val = item_data.get("상품코드")
-                if not product_code_val or "정보 없음" in product_code_val:
+                if not product_code_val or product_code_val.strip() == "-" or "정보 없음" in product_code_val:
                     product_code_val = None
 
                 doc_map = {
