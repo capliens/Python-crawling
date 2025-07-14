@@ -1,4 +1,4 @@
-# 카카오페이손해 /판매중단도 같이가져옴
+# 카카오페이손해
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By

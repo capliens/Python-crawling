@@ -1,4 +1,4 @@
-# 처브라이프/판매중단페이지/링크수정/DB확인하기
+# 처브라이프/판매중단페이지
 from seleniumwire import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait

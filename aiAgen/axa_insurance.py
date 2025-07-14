@@ -8,8 +8,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 from datetime import datetime
-import os  # sys.path 수정을 위해 추가
-import sys  # sys.path 수정을 위해 추가
+import os
+import sys
 
 project_root = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..'))
@@ -78,8 +78,7 @@ def scrape_axa_insurance_products():
                 link_data = None
                 if len(cells) > (i + 1):
                     try:
-                        link_element = cells[i +
-                                             1].find_element(By.TAG_NAME, "a")
+                        link_element = cells[i + 1].find_element(By.TAG_NAME, "a")
                         href = link_element.get_attribute("href")
                         if href and href.strip() != "#" and href.strip() != "":  # 유효한 링크인지 추가 확인
                             link_data = (link_type, href)

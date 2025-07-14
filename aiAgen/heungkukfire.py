@@ -1,4 +1,4 @@
-# 흥국화재/페이로드?
+# 흥국화재
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
