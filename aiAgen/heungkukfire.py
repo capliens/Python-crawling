@@ -321,8 +321,25 @@ if __name__ == "__main__":
 
             for item in collected_data:
                 product_name_val = item.get("product_name")
-                sales_period_val = item.get("sale_date")
+                raw_sale_date = item.get("sale_date")
                 product_code_val = None
+
+                # --- Modified Logic for sales_period_val ---
+                sales_period_val = ""
+                if "~" in raw_sale_date:
+                    sales_period_val = raw_sale_date
+                else:
+                    # Determine if it's a selling product or discontinued based on product_type_tab
+                    product_type_tab = item.get("product_type_tab")
+                    if product_type_tab == "판매상품":
+                        # If selling, format as "날짜~판매중" or "날짜~" if a specific end date isn't implied
+                        sales_period_val = f"{raw_sale_date}~"
+                    elif product_type_tab == "판매중지상품":
+                        # If discontinued, format as "~날짜"
+                        sales_period_val = f"~{raw_sale_date}"
+                    else:
+                        # Fallback for other cases or if tab info is missing
+                        sales_period_val = raw_sale_date
 
                 doc_map = {
                     "상품요약서": item.get("summary_link"),
